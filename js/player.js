@@ -1,0 +1,301 @@
+// Telefoonscherm voor spelers.
+import {
+  configured, auth, db, ref, get, set, onValue, serverTimestamp, signInAnonymously, onAuthStateChanged, serverNow,
+} from "./firebase.js";
+import { shapeSvg, esc, optionsFor, ranking, startSnow, confetti, fmtNum } from "./common.js";
+
+const $screen = document.getElementById("screen");
+const $brand = document.getElementById("brand");
+const STORE = "kq-player";
+
+let code = null;
+let uid = null;
+let myName = "";
+let settings = {};
+let state = {};
+let current = null;
+let scores = {};
+let answeredKey = null; // qkey waarop dit toestel al antwoordde
+let unsubs = [];
+let timerInt = null;
+
+startSnow(0.5);
+
+function saveSession() { try { localStorage.setItem(STORE, JSON.stringify({ code, name: myName })); } catch { /* */ } }
+function loadSession() { try { return JSON.parse(localStorage.getItem(STORE) || "null"); } catch { return null; } }
+function clearSession() { try { localStorage.removeItem(STORE); } catch { /* */ } }
+
+function render(html) { $screen.innerHTML = html; }
+
+// ------------------------------------------------------------------
+// Meedoen
+// ------------------------------------------------------------------
+function showJoin(msg = "") {
+  stopListening();
+  const params = new URLSearchParams(location.search);
+  const prefill = params.get("code") || loadSession()?.code || "";
+  const name = loadSession()?.name || "";
+  render(`
+    <form id="joinForm" class="card" autocomplete="off">
+      <h2 class="center">Doe mee!</h2>
+      <div class="field">
+        <label for="code">Spelcode</label>
+        <input class="input code-input" id="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" value="${esc(prefill)}" required>
+      </div>
+      <div class="field">
+        <label for="name">Jouw naam</label>
+        <input class="input" id="name" maxlength="20" placeholder="Bijv. Sanne" value="${esc(name)}" required>
+      </div>
+      <p class="error" id="err">${esc(msg)}</p>
+      <button class="btn big" style="width:100%" type="submit" id="joinBtn">Meedoen 🎅</button>
+    </form>`);
+  const form = document.getElementById("joinForm");
+  const $code = document.getElementById("code");
+  const $name = document.getElementById("name");
+  (prefill ? $name : $code).focus();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const c = $code.value.replace(/\D/g, "");
+    const n = $name.value.trim().replace(/\s+/g, " ").slice(0, 20);
+    const $err = document.getElementById("err");
+    if (c.length !== 6) { $err.textContent = "De code bestaat uit 6 cijfers."; return; }
+    if (!n) { $err.textContent = "Vul je naam in."; return; }
+    document.getElementById("joinBtn").disabled = true;
+    try {
+      await join(c, n);
+    } catch (err) {
+      console.error(err);
+      $err.textContent = err.userMessage || "Er ging iets mis. Controleer je internet en probeer opnieuw.";
+      document.getElementById("joinBtn").disabled = false;
+    }
+  });
+}
+
+async function ensureAuth() {
+  if (auth.currentUser) return auth.currentUser.uid;
+  const cred = await signInAnonymously(auth);
+  return cred.user.uid;
+}
+
+async function join(c, n) {
+  uid = await ensureAuth();
+  const hostSnap = await get(ref(db, `games/${c}/host`));
+  if (!hostSnap.exists()) throw Object.assign(new Error("not found"), { userMessage: "Deze code bestaat niet. Kijk nog eens op het grote scherm." });
+  const stateSnap = await get(ref(db, `games/${c}/state`));
+  if (stateSnap.val()?.phase === "ended") throw Object.assign(new Error("ended"), { userMessage: "Deze quiz is al afgelopen." });
+  const meSnap = await get(ref(db, `games/${c}/players/${uid}`));
+  if (meSnap.exists()) {
+    myName = meSnap.val().name; // terugkeren na herladen
+  } else {
+    // Naam al in gebruik? Voeg een nummer toe.
+    const playersSnap = await get(ref(db, `games/${c}/players`));
+    const taken = new Set(Object.values(playersSnap.val() || {}).map((p) => p.name.toLowerCase()));
+    let finalName = n, i = 2;
+    while (taken.has(finalName.toLowerCase())) finalName = `${n.slice(0, 17)} ${i++}`;
+    await set(ref(db, `games/${c}/players/${uid}`), { name: finalName, joinedAt: serverTimestamp() });
+    myName = finalName;
+  }
+  code = c;
+  saveSession();
+  if (new URLSearchParams(location.search).get("code") !== c) {
+    const u = new URL(location.href); u.searchParams.set("code", c); history.replaceState(null, "", u);
+  }
+  listen();
+}
+
+// ------------------------------------------------------------------
+// Live meeluisteren
+// ------------------------------------------------------------------
+function stopListening() { unsubs.forEach((u) => u()); unsubs = []; clearInterval(timerInt); }
+
+function listen() {
+  stopListening();
+  const base = `games/${code}`;
+  unsubs.push(onValue(ref(db, `${base}/settings`), (s) => { settings = s.val() || {}; renderBrand(); }));
+  unsubs.push(onValue(ref(db, `${base}/players/${uid}`), (s) => {
+    if (!s.exists()) { clearSession(); code = null; showJoin("Je bent uit het spel verwijderd. Je kunt opnieuw meedoen."); }
+  }));
+  unsubs.push(onValue(ref(db, `${base}/scores`), (s) => { scores = s.val() || {}; update(); }));
+  unsubs.push(onValue(ref(db, `${base}/current`), (s) => { current = s.val(); update(); }));
+  unsubs.push(onValue(ref(db, `${base}/state`), (s) => { state = s.val() || {}; update(); }));
+}
+
+function renderBrand() {
+  const logo = settings.logo ? `<img src="${esc(settings.logo)}" alt="">` : "";
+  $brand.innerHTML = `${logo}<span class="title">${esc(settings.title || "🎄 Kerstquiz")}</span>`;
+  document.title = `${settings.title || "Kerstquiz"} – Meedoen`;
+}
+
+function myScore() { return scores[uid] || { score: 0, streak: 0 }; }
+function myRank() { const r = ranking(scores).find((x) => x.uid === uid); return r ? r.rank : null; }
+
+function topbar() {
+  const s = myScore();
+  return `<div class="topbar"><span>${esc(myName)}</span><span class="score">${fmtNum(s.score)} pnt</span></div>`;
+}
+
+let lastRendered = "";
+function update() {
+  if (!code) return;
+  const phase = state.phase || "lobby";
+  const key = `${phase}|${state.qkey}|${answeredKey}|${JSON.stringify(myScore())}|${current?.qkey}`;
+  if (key === lastRendered) return;
+  lastRendered = key;
+  clearInterval(timerInt);
+
+  if (phase === "lobby") {
+    render(`${topbar()}
+      <div class="status-emoji">🎅</div>
+      <div class="status-big">Je doet mee!</div>
+      <p class="center muted">Zie je jouw naam op het grote scherm?<br>De quiz begint zo.</p>`);
+  } else if (phase === "intro") {
+    render(`${topbar()}
+      <div class="status-emoji">🎁</div>
+      <div class="status-big">Vraag ${state.index + 1} van ${state.total}</div>
+      <p class="center muted">Kijk naar het grote scherm…</p>`);
+  } else if (phase === "question") {
+    if (!current || current.qkey !== state.qkey) return;
+    if (answeredKey === state.qkey) showWaiting();
+    else showQuestion();
+  } else if (phase === "reveal" || phase === "leaderboard") {
+    showResult();
+  } else if (phase === "podium" || phase === "ended") {
+    showFinal();
+  }
+}
+
+function showQuestion() {
+  const q = current;
+  const opts = optionsFor(q);
+  const remaining = () => Math.max(0, Math.ceil((state.startedAt + state.duration * 1000 - serverNow()) / 1000));
+  const timerHtml = `<span class="pill" id="ptimer">${remaining()}s</span>`;
+  const head = `${topbar()}
+    <div class="center">${timerHtml} ${q.double ? '<span class="pill">⭐ Dubbele punten</span>' : ""}</div>
+    <div class="p-qtext">${esc(q.text)}</div>`;
+  if (q.type === "estimate") {
+    render(`${head}
+      <form class="p-estimate" id="estForm">
+        <input class="input" id="est" type="number" inputmode="decimal" step="any" placeholder="Jouw schatting" required>
+        ${q.unit ? `<p class="center muted">in ${esc(q.unit)}</p>` : ""}
+        <button class="btn big" type="submit">Verstuur</button>
+      </form>`);
+    const $est = document.getElementById("est");
+    $est.focus();
+    document.getElementById("estForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = Number(String($est.value).replace(",", "."));
+      if (!isFinite(v) || $est.value === "") return;
+      sendAnswer(v);
+    });
+  } else {
+    render(`${head}
+      <div class="p-answers ${opts.length === 2 ? "two" : ""}">
+        ${opts.map((o, i) => `<button class="p-answer opt-${i}" data-i="${i}">${shapeSvg(i)}<span>${esc(o)}</span></button>`).join("")}
+      </div>`);
+    $screen.querySelectorAll(".p-answer").forEach((b) => b.addEventListener("click", () => {
+      $screen.querySelectorAll(".p-answer").forEach((x) => { x.disabled = true; });
+      sendAnswer(Number(b.dataset.i));
+    }));
+  }
+  timerInt = setInterval(() => {
+    const el = document.getElementById("ptimer");
+    const r = remaining();
+    if (el) el.textContent = `${r}s`;
+    if (r <= 0) { clearInterval(timerInt); if (answeredKey !== state.qkey) showTooLate(); }
+  }, 250);
+}
+
+async function sendAnswer(v) {
+  const qkey = state.qkey;
+  if (navigator.vibrate) navigator.vibrate(30);
+  try {
+    await set(ref(db, `games/${code}/answers/${qkey}/${uid}`), { v, t: serverTimestamp() });
+    answeredKey = qkey;
+    lastRendered = "";
+    update();
+  } catch (err) {
+    console.warn(err);
+    // Te laat of al geantwoord
+    answeredKey = qkey;
+    showTooLate();
+  }
+}
+
+function showWaiting() {
+  render(`${topbar()}
+    <div class="status-emoji">⏳</div>
+    <div class="status-big">Antwoord verstuurd!</div>
+    <p class="center muted">Spannend… even wachten op de rest.</p>`);
+}
+
+function showTooLate() {
+  render(`${topbar()}
+    <div class="status-emoji">⌛</div>
+    <div class="status-big">Tijd is om!</div>
+    <p class="center muted">Kijk op het grote scherm voor het antwoord.</p>`);
+}
+
+function showResult() {
+  const s = myScore();
+  const last = s.last && s.last.qkey === state.qkey ? s.last : null;
+  const rank = myRank();
+  const total = Object.keys(scores).length;
+  let box;
+  if (!last || !last.answered) {
+    box = `<div class="result-box neutral"><div class="status-emoji">🙈</div><div class="status-big">Geen antwoord</div></div>`;
+  } else if (last.correct) {
+    box = `<div class="result-box ok"><div class="status-emoji">🎉</div><div class="status-big">Goed!</div>
+      <div class="points">+${fmtNum(last.points)}</div>
+      ${s.streak >= 2 ? `<span class="pill">🔥 ${s.streak} op rij${last.bonus ? ` (+${last.bonus} bonus)` : ""}</span>` : ""}</div>`;
+  } else if (last.points > 0) {
+    box = `<div class="result-box neutral"><div class="status-emoji">🤏</div><div class="status-big">Bijna!</div>
+      <div class="points">+${fmtNum(last.points)}</div></div>`;
+  } else {
+    box = `<div class="result-box bad"><div class="status-emoji">🎄</div><div class="status-big">Helaas, fout</div></div>`;
+  }
+  render(`${topbar()}${box}
+    ${rank ? `<p class="center" style="font-size:1.2em"><b>Je staat op plek ${rank}</b> <span class="muted">van ${total}</span></p>` : ""}`);
+  if (last?.correct && navigator.vibrate) navigator.vibrate([40, 60, 40]);
+}
+
+function showFinal() {
+  const rank = myRank();
+  const s = myScore();
+  const medal = { 1: "🥇", 2: "🥈", 3: "🥉" }[rank] || "🎄";
+  const msg = rank === 1 ? "Je hebt gewonnen!" : rank <= 3 ? "Je staat op het podium!" : "Goed gespeeld!";
+  render(`${topbar()}
+    <div class="status-emoji" style="font-size:6em">${medal}</div>
+    <div class="status-big">${msg}</div>
+    <p class="center" style="font-size:1.3em">Plek <b>${rank ?? "–"}</b> met <b>${fmtNum(s.score)}</b> punten</p>
+    <p class="center muted">Fijne feestdagen! 🎁</p>`);
+  if (state.phase === "podium" && rank && rank <= 3) setTimeout(() => confetti(120), 600);
+}
+
+// ------------------------------------------------------------------
+// Start
+// ------------------------------------------------------------------
+if (!configured) {
+  render(`<div class="card center"><h2>Nog niet ingesteld</h2><p class="muted">De quizmaster moet Firebase nog koppelen (zie README).</p></div>`);
+} else {
+  const saved = loadSession();
+  const urlCode = new URLSearchParams(location.search).get("code");
+  const unsub = onAuthStateChanged(auth, async (user) => {
+    unsub();
+    if (user && saved?.code && (!urlCode || urlCode === saved.code)) {
+      // Automatisch terugkeren in het spel na herladen
+      try {
+        uid = user.uid;
+        const me = await get(ref(db, `games/${saved.code}/players/${uid}`));
+        const st = await get(ref(db, `games/${saved.code}/state`));
+        if (me.exists() && st.val()?.phase !== "ended") {
+          code = saved.code; myName = me.val().name;
+          const ans = st.val()?.qkey ? await get(ref(db, `games/${code}/answers/${st.val().qkey}/${uid}`)).catch(() => null) : null;
+          if (ans?.exists()) answeredKey = st.val().qkey;
+          listen();
+          return;
+        }
+      } catch (e) { console.warn(e); }
+    }
+    showJoin();
+  });
+}
