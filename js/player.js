@@ -4,6 +4,7 @@ import {
 } from "./firebase.js";
 import {
   shapeSvg, esc, optionsFor, ranking, startSnow, confetti, fmtNum, avatarOf, countUp, monogram, sparkleAt, glassSvg, burstFrom,
+  parseNumberNL, encodePin,
 } from "./common.js";
 
 const $screen = document.getElementById("screen");
@@ -200,7 +201,7 @@ function showQuestion() {
   if (q.type === "estimate") {
     render(`${head}
       <form class="p-estimate" id="estForm">
-        <input class="input" id="est" type="number" inputmode="decimal" step="any" placeholder="Jouw schatting" required>
+        <input class="input" id="est" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="send" placeholder="Jouw schatting" required>
         ${q.unit ? `<p class="center muted" style="margin:0">in ${esc(q.unit)}</p>` : ""}
         <button class="btn big" type="submit">Verstuur</button>
       </form>`);
@@ -208,12 +209,52 @@ function showQuestion() {
     $est.focus();
     document.getElementById("estForm").addEventListener("submit", (e) => {
       e.preventDefault();
-      const v = Number(String($est.value).replace(",", "."));
+      const v = parseNumberNL($est.value);
       if (!isFinite(v) || $est.value === "") return;
       const r = e.submitter?.getBoundingClientRect();
       if (r) sparkleAt(r.left + r.width / 2, r.top + r.height / 2, 12);
       sendAnswer(v);
     });
+  } else if (q.type === "pin") {
+    // Prik-vraag: tik op de afbeelding, verschuif eventueel, en bevestig
+    render(`${head}
+      <div class="p-pin" id="pinBox"><img src="${esc(q.image)}" alt="" id="pinImg" draggable="false"><span class="pin-mark mine hidden" id="myPin">✦</span></div>
+      <p class="center muted" id="pinHint" style="margin:0">Tik op de plek van je antwoord.</p>
+      <button class="btn big" id="pinGo" disabled>Hier is het</button>`);
+    let pick = null;
+    const box = document.getElementById("pinBox"), img = document.getElementById("pinImg"), mark = document.getElementById("myPin");
+    box.addEventListener("pointerdown", (e) => {
+      const r = img.getBoundingClientRect();
+      pick = { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
+      mark.style.left = `${pick.x * 100}%`; mark.style.top = `${pick.y * 100}%`;
+      mark.classList.remove("hidden"); mark.classList.remove("drop"); void mark.offsetWidth; mark.classList.add("drop");
+      document.getElementById("pinGo").disabled = false;
+      document.getElementById("pinHint").textContent = "Klopt het? Tik anders opnieuw.";
+    });
+    document.getElementById("pinGo").onclick = (e) => {
+      if (!pick) return;
+      e.currentTarget.disabled = true;
+      const r = mark.getBoundingClientRect();
+      sparkleAt(r.left + r.width / 2, r.top + r.height / 2, 14);
+      sendAnswer(encodePin(pick.x, pick.y));
+    };
+  } else if (q.type === "closest") {
+    // Dichtstbij-vraag: zoek en kies (de waarden zie je niet)
+    render(`${head}
+      <input class="input" id="itemSearch" type="text" placeholder="Zoeken…" autocomplete="off" enterkeyhint="search">
+      <div class="p-items" id="itemList">
+        ${opts.map((o, i) => `<button class="p-item opt-${i % 4}" data-i="${i}">${esc(o)}</button>`).join("")}
+      </div>`);
+    const list = document.getElementById("itemList");
+    document.getElementById("itemSearch").oninput = (e) => {
+      const term = e.target.value.trim().toLowerCase();
+      list.querySelectorAll(".p-item").forEach((b) => b.classList.toggle("hidden", !!term && !b.textContent.toLowerCase().includes(term)));
+    };
+    list.querySelectorAll(".p-item").forEach((b) => b.addEventListener("click", (e) => {
+      sparkleAt(e.clientX, e.clientY, 12);
+      list.querySelectorAll(".p-item").forEach((x) => { x.disabled = true; x.classList.add(x === b ? "chosen" : "faded"); });
+      setTimeout(() => sendAnswer(Number(b.dataset.i)), 250);
+    }));
   } else {
     render(`${head}
       <div class="p-answers ${opts.length === 2 ? "two" : ""}">

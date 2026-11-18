@@ -8,7 +8,13 @@ Een pubquiz voor de kerstborrel van het werk. De vragen staan op het grote scher
 ## Wat zit erin
 
 - Meedoen met een 6-cijferige code of QR-code, iedereen met een eigen naam
-- Vier soorten vragen: **meerkeuze**, **waar/niet waar**, **schatvragen** en vragen **met een foto** (de foto staat alleen op het grote scherm)
+- Vijf soorten vragen:
+  - **meerkeuze** en **waar/niet waar** (sneller antwoorden = meer punten)
+  - **schatvraag**: bij de onthulling verschijnen alle schattingen op een getallenlijn en valt het goede antwoord erop
+  - **dichtstbij-vraag** (zoals Plain): kies uit een lijst het ding waarvan de waarde het dichtst bij een doel ligt; spelers zien de waarden niet
+  - **prik-vraag** (zoals Farflung): tik op een kaart, plattegrond of foto aan waar het antwoord is; hoe dichterbij, hoe meer punten
+  - bij elke vraag kan een foto op het grote scherm
+- **Vragen plakken**: kopieer een kant-en-klare instructie naar de chat van Claude, en plak het antwoord in één keer terug in de quiz
 - Puntentelling zoals bij Kahoot: tot 1000 punten per vraag, meer voor snel antwoorden, tot +500 bonus voor meerdere goede antwoorden op rij, en per vraag in te stellen ⭐ dubbele punten
 - Bij een schatvraag krijgt wie er het dichtst bij zit 1000 punten. De rest krijgt minder, naar hoe ver ze ernaast zitten
 - Na elke vraag zie je de verdeling van de antwoorden en de tussenstand (met wie er stijgt ▲ of daalt ▼). De quiz gaat na 10 seconden vanzelf verder; je kunt pauzeren (knop Pauze of toets P), zelf doorklikken, of het automatisch doorgaan bij Instellingen aanpassen of uitzetten
@@ -67,7 +73,8 @@ Firebase (van Google) zorgt voor de live verbinding tussen de telefoons en het g
 1. Open `host.html` en log in.
 2. Op het tabblad **Vragen** kun je beginnen met **Voorbeeldvragen toevoegen** (acht kerstvragen), of met **+ Nieuwe vraag**.
 3. Per vraag stel je in: de soort, de tijd (10 tot 90 seconden), een foto (optioneel) en dubbele punten (optioneel).
-4. Op het tabblad **Instellingen** vul je de naam van de quiz, de bedrijfsnaam en het logo in.
+4. Veel vragen tegelijk? Klik op **Vragen plakken** → **Kopieer instructie voor de chat**. Plak die in de chat van Claude, zet erachter waar de vragen over moeten gaan, en plak het antwoord van de chat terug. Prik-vragen maak je zelf, omdat daar een afbeelding bij hoort.
+5. Op het tabblad **Instellingen** vul je de naam van de quiz, de bedrijfsnaam en het logo in.
 
 Tip: vragen over het werk maken het leukst. Denk aan "Welke collega is dit als baby?" met een foto, of "Hoeveel koppen koffie dronken we dit jaar?" als schatvraag.
 

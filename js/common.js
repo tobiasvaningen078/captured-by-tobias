@@ -60,13 +60,37 @@ export function esc(s) {
 
 export const fmtNum = (n) => Number(n).toLocaleString("nl-NL", { maximumFractionDigits: 2 });
 
-export const TYPE_LABELS = { mc: "Meerkeuze", tf: "Waar / niet waar", estimate: "Schatvraag" };
+export const TYPE_LABELS = {
+  mc: "Meerkeuze", tf: "Waar / niet waar", estimate: "Schatvraag", closest: "Dichtstbij-vraag", pin: "Prik-vraag",
+};
+export const DEFAULT_TIME = { mc: 20, tf: 15, estimate: 30, closest: 30, pin: 30 };
 
-/** Antwoordopties zoals spelers ze zien. */
+/** Antwoordopties zoals spelers ze zien (bij dichtstbij: alleen de namen, nooit de waarden). */
 export function optionsFor(q) {
   if (q.type === "tf") return ["Waar", "Niet waar"];
   if (q.type === "mc") return (q.options || []).map((o) => o || "");
+  // Op de telefoon staan alleen de namen in q.options; bij de quizmaster de volledige items
+  if (q.type === "closest") return q.items ? q.items.map((it) => it.label || "") : (q.options || []);
   return [];
+}
+
+/** Getal uit Nederlandse of internationale schrijfwijze: "48.000.000", "1,5", "1.5", "2 500". */
+export function parseNumberNL(input) {
+  if (typeof input === "number") return input;
+  let s = String(input ?? "").trim().replace(/[\s_']/g, "").replace(/[^\d.,\-eE+]/g, "");
+  if (!s) return NaN;
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  return Number(s);
+}
+
+// Prik-vraag: x en y (0..1) worden in één getal opgeslagen, zodat de databaseregels niet hoeven te veranderen.
+export const encodePin = (x, y) => Math.round(Math.min(1, Math.max(0, x)) * 10000) * 10001 + Math.round(Math.min(1, Math.max(0, y)) * 10000);
+export const decodePin = (v) => ({ x: Math.floor(v / 10001) / 10000, y: (v % 10001) / 10000 });
+
+/** Afstand tussen twee punten op een afbeelding, als fractie van de diagonaal (0 = raak, 1 = hoek tot hoek). */
+export function pinDistance(a, b, aspect = 1.5) {
+  return Math.hypot((a.x - b.x) * aspect, a.y - b.y) / Math.hypot(aspect, 1);
 }
 
 // ------------------------------------------------------------------
@@ -88,13 +112,7 @@ export function streakBonus(streak) {
 
 /**
  * Bereken de nieuwe scores en de onthulling voor één vraag.
- * @param q        de vraag (met correct antwoord)
- * @param qkey     sleutel van de vraag in dit spel, bijv. "q3"
- * @param answers  { uid: { v, t } }
- * @param players  { uid: { name } }
- * @param prev     { uid: { score, streak } }
- * @param startedAt servertijd waarop de vraag begon (ms)
- * @param durationMs duur van de vraag
+ * Per soort: meerkeuze/waar-niet-waar → goed + snelheid; schatting, dichtstbij en prik → hoe dichter, hoe meer.
  */
 export function computeResults(q, qkey, answers, players, prev, startedAt, durationMs) {
   answers = answers || {};
@@ -102,47 +120,70 @@ export function computeResults(q, qkey, answers, players, prev, startedAt, durat
   const mult = q.double ? 2 : 1;
   const scores = {};
   const reveal = { qkey, type: q.type, answered: 0 };
+  const result = {}; // uid → { base, correct }
+  const valid = Object.entries(answers).filter(([uid, a]) => players[uid] && typeof a.v === "number" && isFinite(a.v));
 
-  let estimate = null;
   if (q.type === "estimate") {
     const target = Number(q.correct);
-    const errs = {};
-    let minErr = Infinity;
-    for (const [uid, a] of Object.entries(answers)) {
-      if (!players[uid] || typeof a.v !== "number" || !isFinite(a.v)) continue;
-      errs[uid] = Math.abs(a.v - target);
-      minErr = Math.min(minErr, errs[uid]);
+    const errs = Object.fromEntries(valid.map(([uid, a]) => [uid, Math.abs(a.v - target)]));
+    const minErr = Math.min(Infinity, ...Object.values(errs));
+    for (const [uid, err] of Object.entries(errs)) {
+      const rel = err / Math.max(Math.abs(target), 1);
+      if (err === minErr) result[uid] = { base: MAX_POINTS, correct: true };
+      else result[uid] = { base: Math.round(800 * Math.max(0, 1 - rel)), correct: rel <= 0.1 };
     }
-    estimate = { target, errs, minErr };
-    const closest = Object.keys(errs).filter((u) => errs[u] === minErr);
     reveal.correct = target;
-    reveal.closest = closest.map((u) => ({ name: players[u].name, v: answers[u].v }));
+    reveal.closest = Object.keys(errs).filter((u) => errs[u] === minErr).map((u) => ({ name: players[u].name, v: answers[u].v }));
+    reveal.guesses = valid.slice(0, 80).map(([uid, a]) => ({ name: players[uid].name, v: a.v, best: errs[uid] === minErr }));
+  } else if (q.type === "closest") {
+    const items = q.items || [];
+    const target = Number(q.target);
+    const errs = items.map((it) => Math.abs(Number(it.value) - target));
+    const best = Math.min(...errs), worst = Math.max(...errs);
+    const counts = items.map(() => 0);
+    for (const [uid, a] of valid) {
+      const i = Math.round(a.v);
+      if (i < 0 || i >= items.length) continue;
+      counts[i]++;
+      const f = worst === best ? 0 : (errs[i] - best) / (worst - best);
+      result[uid] = { base: Math.round(MAX_POINTS * Math.pow(1 - f, 1.6)), correct: errs[i] === best, pick: i };
+    }
+    reveal.target = target;
+    reveal.ranked = items
+      .map((it, i) => ({ label: it.label, value: Number(it.value), count: counts[i], best: errs[i] === best, err: errs[i] }))
+      .sort((x, y) => x.err - y.err);
+  } else if (q.type === "pin") {
+    const point = q.point || { x: 0.5, y: 0.5 };
+    const aspect = Number(q.aspect) || 1.5;
+    const pins = [];
+    for (const [uid, a] of valid) {
+      const p = decodePin(a.v);
+      const d = pinDistance(p, point, aspect);
+      pins.push({ uid, name: players[uid].name, x: p.x, y: p.y, d });
+    }
+    const minD = Math.min(Infinity, ...pins.map((p) => p.d));
+    for (const p of pins) {
+      result[p.uid] = { base: Math.round(MAX_POINTS * Math.max(0, 1 - p.d / 0.35)), correct: p.d <= 0.04 || (p.d === minD && p.d <= 0.12) };
+    }
+    reveal.point = point;
+    reveal.pins = pins.slice(0, 80).map(({ name, x, y, d }) => ({ name, x, y, best: d === minD }));
+    reveal.closest = pins.filter((p) => p.d === minD).map((p) => ({ name: p.name }));
   } else {
     const n = q.type === "tf" ? 2 : 4;
     reveal.correct = Number(q.correct);
     reveal.counts = Array(n).fill(0);
-    for (const [uid, a] of Object.entries(answers)) {
-      if (players[uid] && a.v >= 0 && a.v < n) reveal.counts[a.v]++;
+    for (const [uid, a] of valid) {
+      if (a.v >= 0 && a.v < n) reveal.counts[a.v]++;
+      const correct = a.v === Number(q.correct);
+      result[uid] = { base: correct ? speedPoints((a.t || startedAt) - startedAt, durationMs) : 0, correct };
     }
   }
 
   for (const [uid, p] of Object.entries(players)) {
     const a = answers[uid];
     const before = prev[uid] || { score: 0, streak: 0 };
-    let correct = false;
-    let base = 0;
     if (a) reveal.answered++;
-    if (a && q.type === "estimate") {
-      const err = estimate.errs[uid];
-      if (err !== undefined) {
-        const rel = err / Math.max(Math.abs(estimate.target), 1);
-        if (err === estimate.minErr) { correct = true; base = MAX_POINTS; }
-        else { base = Math.round(800 * Math.max(0, 1 - rel)); correct = rel <= 0.1; }
-      }
-    } else if (a) {
-      correct = a.v === Number(q.correct);
-      if (correct) base = speedPoints((a.t || startedAt) - startedAt, durationMs);
-    }
+    const { base = 0, correct = false } = result[uid] || {};
     const streak = correct ? (before.streak || 0) + 1 : 0;
     const bonus = correct ? streakBonus(streak) : 0;
     const points = base * mult + bonus;
@@ -155,6 +196,97 @@ export function computeResults(q, qkey, answers, players, prev, startedAt, durat
     };
   }
   return { scores, reveal };
+}
+
+// ------------------------------------------------------------------
+// Vragen plakken (uit de chat)
+// ------------------------------------------------------------------
+export const IMPORT_PROMPT = `Maak quizvragen voor de kerstquiz van ons werk. Geef ze terug als één JSON-lijst, zonder uitleg eromheen, precies in dit formaat:
+
+[
+  { "soort": "meerkeuze", "vraag": "Welk land schenkt Londen elk jaar een kerstboom?", "opties": ["Zweden", "Noorwegen", "Denemarken", "Finland"], "goed": 2 },
+  { "soort": "waar-niet-waar", "vraag": "De Kerstman is deels gebaseerd op Sint-Nicolaas.", "goed": true },
+  { "soort": "schatting", "vraag": "Hoeveel cadeaus krijg je in totaal in 'The Twelve Days of Christmas'?", "antwoord": 364, "eenheid": "cadeaus" },
+  { "soort": "dichtstbij", "vraag": "Kies een land met ongeveer 50 miljoen inwoners", "doel": 50000000, "eenheid": "inwoners",
+    "items": [ { "naam": "Spanje", "waarde": 48600000 }, { "naam": "Italië", "waarde": 58900000 }, { "naam": "Polen", "waarde": 36700000 } ] }
+]
+
+Regels:
+- "soort" is "meerkeuze", "waar-niet-waar", "schatting" of "dichtstbij".
+- Meerkeuze: 2 tot 4 opties; "goed" is het nummer van het goede antwoord (1 = eerste optie).
+- Waar-niet-waar: "goed" is true of false.
+- Schatting: "antwoord" is een getal (geen punten of komma's als duizendtal), "eenheid" mag leeg.
+- Dichtstbij: spelers kiezen uit "items" het ding waarvan de waarde het dichtst bij "doel" ligt. Geef 8 tot 20 items met echte, gecontroleerde waarden.
+- Optioneel per vraag: "tijd" in seconden (10–90) en "dubbel": true voor dubbele punten.
+- Controleer alle feiten zorgvuldig.
+
+Onderwerp en wensen: `;
+
+const pick = (o, ...keys) => { for (const k of keys) if (o[k] !== undefined && o[k] !== null && o[k] !== "") return o[k]; return undefined; };
+
+/** Lees geplakte JSON (of een lijst in een codeblok) in. Geeft {questions, errors}. */
+export function parseImport(text) {
+  const errors = [];
+  let raw = String(text || "").replace(/```(json)?/gi, "").trim();
+  const start = raw.indexOf("["), end = raw.lastIndexOf("]");
+  let data;
+  try {
+    if (start >= 0 && end > start) raw = raw.slice(start, end + 1);
+    data = JSON.parse(raw);
+  } catch (e) {
+    return { questions: [], errors: ["Dit is geen geldige lijst. Kopieer het antwoord van de chat precies zoals het is (het begint met [ en eindigt met ])."] };
+  }
+  if (!Array.isArray(data)) data = data.vragen || data.questions || [data];
+  const questions = [];
+  data.forEach((o, n) => {
+    const nr = `Vraag ${n + 1}`;
+    if (!o || typeof o !== "object") { errors.push(`${nr}: onleesbaar`); return; }
+    const soort = String(pick(o, "soort", "type", "kind") || "").toLowerCase();
+    const type = /meer|mc|multiple|keuze/.test(soort) ? "mc"
+      : /waar|tf|true|false|boolean/.test(soort) ? "tf"
+      : /dichtst|closest|plain|nearest/.test(soort) ? "closest"
+      : /schat|estimate|getal|number/.test(soort) ? "estimate" : null;
+    const text = String(pick(o, "vraag", "question", "text") || "").trim().slice(0, 200);
+    if (!type) { errors.push(`${nr}: onbekende soort "${soort}"`); return; }
+    if (!text) { errors.push(`${nr}: de vraag ontbreekt`); return; }
+    const t = Number(pick(o, "tijd", "time", "seconden"));
+    const q = { type, text, time: [10, 15, 20, 30, 45, 60, 90].includes(t) ? t : DEFAULT_TIME[type], double: !!pick(o, "dubbel", "double") };
+    if (type === "mc") {
+      const opts = (pick(o, "opties", "options", "antwoorden") || []).map((x) => String(x).trim()).filter(Boolean).slice(0, 4);
+      if (opts.length < 2) { errors.push(`${nr}: minimaal 2 opties nodig`); return; }
+      const g = pick(o, "goed", "correct", "answer", "antwoord");
+      let ci = typeof g === "number" ? g - 1 : opts.findIndex((x) => x.toLowerCase() === String(g ?? "").trim().toLowerCase());
+      if (ci < 0 && /^\d+$/.test(String(g ?? ""))) ci = Number(g) - 1;
+      if (!(ci >= 0 && ci < opts.length)) { errors.push(`${nr}: het goede antwoord is onduidelijk`); return; }
+      Object.assign(q, { options: opts, correct: ci });
+    } else if (type === "tf") {
+      const g = pick(o, "goed", "correct", "answer", "antwoord");
+      const s = String(g).toLowerCase();
+      const isTrue = g === true || g === 1 || /^(waar|true|ja|juist|goed)$/.test(s);
+      const isFalse = g === false || g === 0 || /^(niet waar|onwaar|false|nee|fout)$/.test(s);
+      if (!isTrue && !isFalse) { errors.push(`${nr}: zeg met true of false of het waar is`); return; }
+      q.correct = isTrue ? 0 : 1;
+    } else if (type === "estimate") {
+      const v = parseNumberNL(pick(o, "antwoord", "answer", "goed", "correct"));
+      if (!isFinite(v)) { errors.push(`${nr}: het antwoord is geen getal`); return; }
+      q.correct = v;
+      const u = pick(o, "eenheid", "unit"); if (u) q.unit = String(u).slice(0, 20);
+    } else if (type === "closest") {
+      const target = parseNumberNL(pick(o, "doel", "target"));
+      let items = pick(o, "items", "keuzes", "opties", "options") || [];
+      if (!Array.isArray(items) && typeof items === "object") items = Object.entries(items).map(([naam, waarde]) => ({ naam, waarde }));
+      items = items.map((it) => {
+        if (typeof it === "string") { const m = it.split(/[=:]/); return { label: m[0].trim(), value: parseNumberNL(m.slice(1).join(":")) }; }
+        return { label: String(pick(it, "naam", "name", "label") || "").trim(), value: parseNumberNL(pick(it, "waarde", "value")) };
+      }).filter((it) => it.label && isFinite(it.value)).slice(0, 40);
+      if (!isFinite(target)) { errors.push(`${nr}: het doel is geen getal`); return; }
+      if (items.length < 2) { errors.push(`${nr}: minimaal 2 items met een waarde nodig`); return; }
+      Object.assign(q, { target, items });
+      const u = pick(o, "eenheid", "unit"); if (u) q.unit = String(u).slice(0, 20);
+    }
+    questions.push(q);
+  });
+  return { questions, errors };
 }
 
 /** Sorteer scores van hoog naar laag: [{uid, name, score, streak, rank}] */

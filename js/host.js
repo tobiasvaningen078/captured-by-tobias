@@ -5,6 +5,7 @@ import {
 } from "./firebase.js";
 import {
   shapeSvg, esc, optionsFor, computeResults, ranking, startSnow, confetti, resizeImage, fmtNum, TYPE_LABELS,
+  DEFAULT_TIME, parseNumberNL, parseImport, IMPORT_PROMPT, decodePin, initials,
   avatarOf, lightsHtml, countUp, monogram, bubbleBurst, burstFrom,
 } from "./common.js";
 import * as sfx from "./sound.js";
@@ -146,10 +147,12 @@ function renderTab() {
 // ---------------- Vragenlijst ----------------
 function questionMeta(q) {
   const bits = [TYPE_LABELS[q.type] || q.type, `${q.time || 20} sec`];
-  if (q.double) bits.push("⭐ dubbele punten");
+  if (q.double) bits.push("dubbele punten");
   if (q.type === "mc") bits.push(`antwoord: ${q.options?.[q.correct] ?? "?"}`);
   if (q.type === "tf") bits.push(`antwoord: ${q.correct === 0 ? "Waar" : "Niet waar"}`);
   if (q.type === "estimate") bits.push(`antwoord: ${fmtNum(q.correct)}${q.unit ? " " + q.unit : ""}`);
+  if (q.type === "closest") bits.push(`doel: ${fmtNum(q.target)}${q.unit ? " " + q.unit : ""}, ${q.items?.length || 0} keuzes`);
+  if (q.type === "pin") bits.push(q.point ? "punt gekozen" : "punt ontbreekt nog");
   return bits.join(" · ");
 }
 
@@ -157,6 +160,7 @@ function renderQuestions(body) {
   body.innerHTML = `
     <div class="row" style="margin-bottom:1em;gap:.6em">
       <button class="btn" id="addQ" style="flex:0 0 auto">+ Nieuwe vraag</button>
+      <button class="btn ghost" id="pasteQ" style="flex:0 0 auto">Vragen plakken</button>
       ${questions.length === 0 ? '<button class="btn ghost" id="addSamples" style="flex:0 0 auto">Voorbeeldvragen toevoegen</button>' : ""}
     </div>
     ${questions.length === 0 ? `<div class="card empty">Nog geen vragen. Voeg er een toe, of begin met een paar voorbeeldvragen over kerst.</div>` : ""}
@@ -164,7 +168,7 @@ function renderQuestions(body) {
       ${questions.map((q, i) => `
         <div class="q-item" data-id="${q.id}">
           <span class="nr">${i + 1}</span>
-          <span class="thumb" style="${q.image ? `background-image:url('${q.image}')` : ""}">${q.image ? "" : { mc: "🔠", tf: "⚖️", estimate: "🔢" }[q.type] || "❓"}</span>
+          <span class="thumb" style="${q.image ? `background-image:url('${q.image}')` : ""}">${q.image ? "" : { mc: "🔠", tf: "⚖️", estimate: "🔢", closest: "🎯", pin: "📍" }[q.type] || "❓"}</span>
           <div class="info"><div class="t">${esc(q.text) || "<i>(zonder tekst)</i>"}</div><div class="m">${esc(questionMeta(q))}</div></div>
           <div class="acts">
             <button class="icon-btn" data-act="up" title="Omhoog" ${i === 0 ? "disabled" : ""}>↑</button>
@@ -176,6 +180,7 @@ function renderQuestions(body) {
         </div>`).join("")}
     </div>`;
   document.getElementById("addQ").onclick = () => openEditor(null);
+  document.getElementById("pasteQ").onclick = openImport;
   const s = document.getElementById("addSamples");
   if (s) s.onclick = addSamples;
   body.querySelectorAll(".q-item").forEach((row) => {
@@ -232,9 +237,12 @@ function openEditor(q) {
   const d = q ? structuredClone(q) : { type: "mc", text: "", options: ["", "", "", ""], correct: 0, time: 20, double: false };
   if (!d.options) d.options = ["", "", "", ""];
   while (d.options.length < 4) d.options.push("");
+  // Dichtstbij-items bewerken als tekst: "Naam = waarde" per regel
+  d.itemsText = d.itemsText ?? (d.items || []).map((it) => `${it.label} = ${fmtNum(it.value)}`).join("\n");
 
   const draw = () => {
     const mcCorrect = d.type === "mc" ? d.correct : 0;
+    const isPin = d.type === "pin";
     $modal.innerHTML = `
       <div class="modal-bg"><form class="modal" id="qForm">
         <h2>${isNew ? "Nieuwe vraag" : "Vraag bewerken"}</h2>
@@ -249,16 +257,20 @@ function openEditor(q) {
             </select></div>
         </div>
         <div class="field"><label for="qText">Vraag</label>
-          <textarea class="input" id="qText" maxlength="200" required placeholder="Bijv. Hoeveel rendieren trekken de slee van de Kerstman?">${esc(d.text)}</textarea></div>
+          <textarea class="input" id="qText" maxlength="200" required placeholder="${isPin ? "Bijv. Waar staat de koffieautomaat?" : d.type === "closest" ? "Bijv. Kies een land met ongeveer 50 miljoen inwoners" : "Bijv. Hoeveel rendieren trekken de slee van de Kerstman?"}">${esc(d.text)}</textarea></div>
 
-        <div class="field"><label>Foto (optioneel, alleen op het grote scherm)</label>
-          ${d.image ? `<img class="img-preview" src="${d.image}" alt=""><div><button type="button" class="btn ghost small" id="rmImg">Foto verwijderen</button></div>` : ""}
-          <input type="file" accept="image/*" id="qImg" class="input">
+        <div class="field"><label>${isPin ? "Kaart, plattegrond of foto (verplicht, ook te zien op de telefoons)" : "Foto (optioneel, alleen op het grote scherm)"}</label>
+          ${d.image ? (isPin
+            ? `<div class="pin-edit" id="pinEdit"><img src="${d.image}" alt="" id="pinImg">${d.point ? `<span class="pin-mark correct-mark" style="left:${d.point.x * 100}%;top:${d.point.y * 100}%">✦</span>` : ""}</div>
+               <p class="muted" style="font-size:.9em;margin:.4em 0">Klik op de afbeelding waar het goede antwoord is.${d.point ? " Klik opnieuw om het te verplaatsen." : ""}</p>`
+            : `<img class="img-preview" src="${d.image}" alt="">`)
+            + `<div><button type="button" class="btn ghost small" id="rmImg">${isPin ? "Andere afbeelding" : "Foto verwijderen"}</button></div>` : ""}
+          ${d.image && isPin ? "" : `<input type="file" accept="image/*" id="qImg" class="input">`}
         </div>
 
         <div id="typeFields">
         ${d.type === "mc" ? `
-          <label class="muted" style="font-weight:600;font-size:.9em">Antwoorden (vink het goede antwoord aan, minimaal 2 invullen)</label>
+          <label class="muted" style="font-size:.9em">Antwoorden (vink het goede antwoord aan, minimaal 2 invullen)</label>
           ${[0, 1, 2, 3].map((i) => `
             <div class="opt-edit">
               <span class="sw opt-${i}">${shapeSvg(i)}</span>
@@ -274,15 +286,26 @@ function openEditor(q) {
         ${d.type === "estimate" ? `
           <div class="row">
             <div class="field"><label for="qNum">Goede antwoord (getal)</label>
-              <input class="input" id="qNum" type="number" step="any" required value="${d.type === "estimate" && d.correct !== undefined ? esc(d.correct) : ""}"></div>
+              <input class="input" id="qNum" inputmode="decimal" required value="${d.correct !== undefined ? esc(fmtNum(d.correct)) : ""}"></div>
             <div class="field"><label for="qUnit">Eenheid (optioneel)</label>
               <input class="input" id="qUnit" maxlength="20" placeholder="bijv. kilo, jaar, stuks" value="${esc(d.unit || "")}"></div>
           </div>
-          <p class="muted" style="font-size:.9em">Wie het dichtst in de buurt zit krijgt 1000 punten. Anderen krijgen minder, afhankelijk van hoe ver ze ernaast zitten.</p>` : ""}
+          <p class="muted" style="font-size:.9em">Wie het dichtst in de buurt zit krijgt 1000 punten. Op het grote scherm verschijnen alle schattingen op een getallenlijn.</p>` : ""}
+        ${d.type === "closest" ? `
+          <div class="row">
+            <div class="field"><label for="qTarget">Doel (getal)</label>
+              <input class="input" id="qTarget" inputmode="decimal" required placeholder="bijv. 50.000.000" value="${d.target !== undefined ? esc(fmtNum(d.target)) : ""}"></div>
+            <div class="field"><label for="qUnit">Eenheid (optioneel)</label>
+              <input class="input" id="qUnit" maxlength="20" placeholder="bijv. inwoners, jaar, km" value="${esc(d.unit || "")}"></div>
+          </div>
+          <div class="field"><label for="qItems">Keuzes, één per regel als <i>naam = waarde</i> (spelers zien alleen de naam)</label>
+            <textarea class="input" id="qItems" rows="8" placeholder="Spanje = 48.600.000&#10;Italië = 58.900.000&#10;Polen = 36.700.000">${esc(d.itemsText)}</textarea></div>
+          <p class="muted" style="font-size:.9em">De keuze die het dichtst bij het doel zit is goed (1000 punten). Hoe verder ernaast, hoe minder punten.</p>` : ""}
+        ${isPin ? `<p class="muted" style="font-size:.9em">Spelers tikken op hun telefoon aan waar het is. Hoe dichterbij, hoe meer punten (tot 1000).</p>` : ""}
         </div>
 
         <label class="correct" style="display:flex;gap:.5em;align-items:center;margin-top:.5em;cursor:pointer">
-          <input type="checkbox" id="qDouble" ${d.double ? "checked" : ""}> ⭐ Dubbele punten voor deze vraag</label>
+          <input type="checkbox" id="qDouble" ${d.double ? "checked" : ""}> Dubbele punten voor deze vraag</label>
         <p class="error" id="qErr"></p>
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="qCancel">Annuleren</button>
@@ -300,8 +323,12 @@ function openEditor(q) {
       } else if (d.type === "tf") {
         const r = $modal.querySelector("input[name=corr]:checked"); d.correct = r ? Number(r.value) : 0;
       } else if (d.type === "estimate") {
-        const v = document.getElementById("qNum").value; d.correct = v === "" ? undefined : Number(v);
+        const v = document.getElementById("qNum").value; d.correct = v === "" ? undefined : parseNumberNL(v);
         d.unit = document.getElementById("qUnit").value;
+      } else if (d.type === "closest") {
+        const v = document.getElementById("qTarget").value; d.target = v === "" ? undefined : parseNumberNL(v);
+        d.unit = document.getElementById("qUnit").value;
+        d.itemsText = document.getElementById("qItems").value;
       }
     };
 
@@ -309,19 +336,34 @@ function openEditor(q) {
       collect();
       const prevType = d.type;
       d.type = e.target.value;
-      if (prevType !== d.type) d.correct = d.type === "estimate" ? undefined : 0;
+      if (prevType !== d.type) {
+        d.correct = d.type === "estimate" ? undefined : 0;
+        d.time = DEFAULT_TIME[d.type] || 20;
+      }
       draw();
     };
     document.getElementById("qCancel").onclick = closeModal;
     const rm = document.getElementById("rmImg");
-    if (rm) rm.onclick = () => { collect(); delete d.image; draw(); };
-    document.getElementById("qImg").onchange = async (e) => {
+    if (rm) rm.onclick = () => { collect(); delete d.image; delete d.point; draw(); };
+    const imgInput = document.getElementById("qImg");
+    if (imgInput) imgInput.onchange = async (e) => {
       const f = e.target.files[0];
       if (!f) return;
       collect();
-      try { d.image = await resizeImage(f, 1280); draw(); }
+      try { d.image = await resizeImage(f, 1280); delete d.point; draw(); }
       catch (err) { document.getElementById("qErr").textContent = err.message; }
     };
+    const pinImg = document.getElementById("pinImg");
+    if (pinImg) {
+      pinImg.onload = () => { if (pinImg.naturalHeight) d.aspect = pinImg.naturalWidth / pinImg.naturalHeight; };
+      if (pinImg.complete && pinImg.naturalHeight) d.aspect = pinImg.naturalWidth / pinImg.naturalHeight;
+      document.getElementById("pinEdit").onclick = (e) => {
+        const r = pinImg.getBoundingClientRect();
+        collect();
+        d.point = { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) };
+        draw();
+      };
+    }
     document.getElementById("qForm").onsubmit = async (e) => {
       e.preventDefault();
       collect();
@@ -338,10 +380,26 @@ function openEditor(q) {
         out.correct = ci;
       } else if (d.type === "tf") {
         out.correct = d.correct === 1 ? 1 : 0;
-      } else {
+      } else if (d.type === "estimate") {
         if (d.correct === undefined || !isFinite(d.correct)) { $err.textContent = "Vul het goede getal in."; return; }
         out.correct = d.correct;
         if (d.unit?.trim()) out.unit = d.unit.trim();
+      } else if (d.type === "closest") {
+        if (d.target === undefined || !isFinite(d.target)) { $err.textContent = "Vul het doel in als getal."; return; }
+        const items = d.itemsText.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+          const m = line.split(/=|:/);
+          return { label: m[0].trim().slice(0, 40), value: parseNumberNL(m.slice(1).join("=")) };
+        });
+        const bad = items.find((it) => !it.label || !isFinite(it.value));
+        if (bad) { $err.textContent = `Deze regel klopt niet: "${bad.label || "?"}". Schrijf het als naam = waarde.`; return; }
+        if (items.length < 2) { $err.textContent = "Geef minimaal 2 keuzes."; return; }
+        if (items.length > 40) { $err.textContent = "Maximaal 40 keuzes."; return; }
+        Object.assign(out, { target: d.target, items });
+        if (d.unit?.trim()) out.unit = d.unit.trim();
+      } else if (d.type === "pin") {
+        if (!d.image) { $err.textContent = "Kies een afbeelding."; return; }
+        if (!d.point) { $err.textContent = "Klik op de afbeelding waar het goede antwoord is."; return; }
+        Object.assign(out, { point: d.point, aspect: d.aspect || 1.5 });
       }
       const base = `quiz/${user.uid}/questions`;
       try {
@@ -357,6 +415,60 @@ function openEditor(q) {
         console.error(err);
         $err.textContent = "Opslaan mislukt: " + (err.code || err.message);
       }
+    };
+  };
+  draw();
+}
+
+// ---------------- Vragen plakken ----------------
+function openImport() {
+  let parsed = null;
+  const draw = (text = "") => {
+    $modal.innerHTML = `
+      <div class="modal-bg"><div class="modal">
+        <h2>Vragen plakken</h2>
+        <ol class="steps">
+          <li>Kopieer de instructie en plak die in de chat van Claude. Zet erachter waar de vragen over moeten gaan, bijv. <i>"10 vragen over kerst en 5 over ons bedrijf, wij zijn een accountantskantoor in Utrecht"</i>.</li>
+          <li>Kopieer het antwoord van de chat en plak het hieronder.</li>
+        </ol>
+        <div class="row" style="margin-bottom:1em"><button type="button" class="btn ghost small" id="copyPrompt" style="flex:0 0 auto">Kopieer instructie voor de chat</button><span class="muted" id="copyOk" style="align-self:center"></span></div>
+        <div class="field"><label for="impText">Antwoord van de chat</label>
+          <textarea class="input" id="impText" rows="10" placeholder='[ { "soort": "meerkeuze", "vraag": "…", … } ]'>${esc(text)}</textarea></div>
+        <div id="impResult"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" id="impCancel">Annuleren</button>
+          <button type="button" class="btn" id="impAdd" disabled>Toevoegen</button>
+        </div>
+      </div></div>`;
+    document.getElementById("impCancel").onclick = closeModal;
+    document.getElementById("copyPrompt").onclick = async () => {
+      try { await navigator.clipboard.writeText(IMPORT_PROMPT); document.getElementById("copyOk").textContent = "Gekopieerd"; }
+      catch { document.getElementById("impText").value = IMPORT_PROMPT; document.getElementById("copyOk").textContent = "Kopiëren lukte niet; de instructie staat nu in het vak hieronder."; }
+    };
+    const $text = document.getElementById("impText");
+    const check = () => {
+      const $res = document.getElementById("impResult");
+      const add = document.getElementById("impAdd");
+      if (!$text.value.trim() || $text.value.startsWith(IMPORT_PROMPT.slice(0, 30))) { $res.innerHTML = ""; add.disabled = true; parsed = null; return; }
+      parsed = parseImport($text.value);
+      const n = parsed.questions.length;
+      $res.innerHTML = `
+        ${n ? `<p><b>${n} ${n === 1 ? "vraag" : "vragen"} gevonden:</b></p>
+          <ul class="imp-list">${parsed.questions.map((q) => `<li><span class="muted">${esc(TYPE_LABELS[q.type])}</span> ${esc(q.text)}</li>`).join("")}</ul>` : ""}
+        ${parsed.errors.length ? `<div class="error">${parsed.errors.map(esc).join("<br>")}</div>` : ""}`;
+      add.disabled = !n;
+      add.textContent = n ? `${n} ${n === 1 ? "vraag" : "vragen"} toevoegen` : "Toevoegen";
+    };
+    $text.oninput = check;
+    check();
+    document.getElementById("impAdd").onclick = async () => {
+      if (!parsed?.questions.length) return;
+      const base = `quiz/${user.uid}/questions`;
+      let order = questions.length ? Math.max(...questions.map((x) => x.order ?? 0)) + 1 : 0;
+      const upd = {};
+      for (const q of parsed.questions) upd[push(ref(db, base)).key] = { ...q, order: order++ };
+      try { await update(ref(db, base), upd); closeModal(); }
+      catch (err) { document.getElementById("impResult").insertAdjacentHTML("beforeend", `<p class="error">Opslaan mislukt: ${esc(err.code || err.message)}</p>`); }
     };
   };
   draw();
@@ -429,6 +541,8 @@ async function startNewGame() {
       if (!(await get(ref(db, `games/${c}/host`))).exists()) { code = c; break; }
     }
     if (!code) throw new Error("Geen vrije code gevonden");
+    const broken = questions.findIndex((q) => q.type === "pin" && (!q.image || !q.point));
+    if (broken >= 0) throw new Error(`Vraag ${broken + 1} is een prik-vraag zonder afbeelding of goed punt. Open die vraag en maak hem af.`);
     const qs = questions.map(({ id, order, ...q }) => q);
     const st = {
       title: settings.title || "Kerstquiz", company: settings.company || "", logo: settings.logo || null,
@@ -728,6 +842,7 @@ async function startQuestion(i) {
   const qkey = `q${i}`;
   const current = { qkey, index: i, total: G.qs.length, type: q.type, text: q.text, options: optionsFor(q), double: !!q.double };
   if (q.unit) current.unit = q.unit;
+  if (q.type === "pin") Object.assign(current, { image: q.image, aspect: q.aspect || 1.5 });
   await setState(
     { phase: "question", index: i, total: G.qs.length, qkey, startedAt: serverTimestamp(), duration: Number(q.time) || 20 },
     { current },
@@ -741,10 +856,31 @@ async function startQuestion(i) {
 
 const RING = 2 * Math.PI * 45;
 
+function questionBottom(q) {
+  const opts = optionsFor(q);
+  if (q.type === "estimate") return `<div class="estimate-box frame enter">Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`;
+  if (q.type === "pin") return `<div class="estimate-box frame enter">Tik op je telefoon aan waar het is</div>`;
+  if (q.type === "closest") {
+    return `<div class="item-chips">${opts.slice(0, 28).map((o, k) => `<span class="item-chip opt-${k % 4}" style="animation-delay:${Math.min(k * 25, 400)}ms">${esc(o)}</span>`).join("")}
+      ${opts.length > 28 ? `<span class="item-chip more">+${opts.length - 28}</span>` : ""}</div>`;
+  }
+  return `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span><span class="gem-glint">✦</span></div>`).join("")}</div>`;
+}
+
+function questionCenter(q, i) {
+  if (q.type === "closest") {
+    return `<div class="target-card frame ivory invite">
+      <div class="script" style="font-size:2.6vh">Kies wat het dichtst bij</div>
+      <div class="target-val">${fmtNum(q.target)}</div>
+      ${q.unit ? `<div class="how">${esc(q.unit)}</div>` : ""}</div>`;
+  }
+  if (q.image) return `<img src="${q.image}" alt="">`;
+  return `<div class="placeholder">✦</div>`;
+}
+
 function showQuestion(resumed) {
   const i = G.state.index;
   const q = G.qs[i];
-  const opts = optionsFor(q);
   sfx.questionMusic();
   $main().innerHTML = `
     <div class="q-head"><div class="q-text frame">${esc(q.text)}</div></div>
@@ -754,12 +890,10 @@ function showQuestion(resumed) {
           <circle class="prog" id="ringProg" cx="50" cy="50" r="45" fill="none" stroke-width="8" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg>
         <div class="num" id="timer">${G.state.duration}</div>
       </div>
-      <div class="q-image">${q.image ? `<img src="${q.image}" alt="">` : `<div class="placeholder">✦</div>`}</div>
+      <div class="q-image">${questionCenter(q, i)}</div>
       <div class="answered"><b id="ansCount">0</b>antwoorden</div>
     </div>
-    ${q.type === "estimate"
-      ? `<div class="estimate-box frame enter">Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
-      : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span><span class="gem-glint">✦</span></div>`).join("")}</div>`}`;
+    ${questionBottom(q)}`;
   setNext("Toon antwoord", true);
 
   if (G.answerUnsub) G.answerUnsub();
@@ -836,35 +970,113 @@ async function doReveal() {
   renderReveal();
 }
 
+/** Plaats markeringen in banen zodat ze elkaar niet overlappen. pos in 0..1. */
+function laneLayout(items, minGap = 0.045, lanes = 5) {
+  const ends = Array(lanes).fill(-1);
+  return items.map((it) => {
+    let lane = ends.findIndex((e) => it.pos - e >= minGap);
+    if (lane < 0) lane = ends.indexOf(Math.min(...ends));
+    ends[lane] = it.pos;
+    return { ...it, lane };
+  });
+}
+
+/** Het grote moment: het goede antwoord valt op zijn plek, met kurk en bubbels. */
+function landTarget(selector, delay = 1300) {
+  setTimeout(() => {
+    const t = $main().querySelector(selector);
+    if (!t) return;
+    t.classList.add("landed");
+    sfx.pop(); setTimeout(() => sfx.reveal(), 160);
+    $main().querySelectorAll(".best").forEach((el) => el.classList.add("glow"));
+    setTimeout(() => burstFrom(t, 60), 120);
+    $main().querySelectorAll(".after-land").forEach((el) => el.classList.add("show"));
+  }, delay);
+}
+
 function renderReveal() {
   const i = G.state.index;
   const q = G.qs[i];
   const r = G.reveal || {};
-  sfx.pop();
-  setTimeout(() => sfx.reveal(), 180);
   const last = i >= G.qs.length - 1;
   setNext(last ? "Naar de uitslag" : "Tussenstand", true);
+  const head = `<div class="q-head"><div class="q-text frame" style="animation:none">${esc(q.text)}</div></div>`;
+  const closestLine = (list, fmt) => list?.length
+    ? `<div class="after-land sub">Het dichtst in de buurt: <b>${list.slice(0, 5).map(fmt).join(", ")}</b></div>`
+    : `<div class="after-land sub">Niemand heeft geantwoord.</div>`;
+
+  // ---- Schatvraag: getallenlijn ----
   if (q.type === "estimate") {
-    const closest = r.closest || [];
-    $main().innerHTML = `
-      <div class="q-head"><div class="q-text frame">${esc(q.text)}</div></div>
-      <div class="big-title">
-        <div class="kicker">Het goede antwoord</div>
-        <div class="estimate-box enter"><div class="val">${fmtNum(q.correct)}${q.unit ? ` <span style="font-size:.5em">${esc(q.unit)}</span>` : ""}</div></div>
-        ${closest.length ? `<div class="sub">Het dichtst in de buurt</div>
-          <div class="estimate-list">${closest.slice(0, 6).map((c) => `<span class="pill">${esc(c.name)}: ${fmtNum(c.v)}</span>`).join("")}</div>`
-          : `<div class="sub">Niemand heeft een schatting gegeven.</div>`}
-        <div class="sub">${r.answered || 0} van ${playerCount()} spelers antwoordden</div>
+    const target = Number(q.correct);
+    const guesses = r.guesses || [];
+    const vals = [target, ...guesses.map((g) => g.v)];
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi === lo) { lo -= Math.abs(lo) * 0.1 + 1; hi += Math.abs(hi) * 0.1 + 1; }
+    const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+    const pos = (v) => (v - lo) / (hi - lo);
+    const marks = laneLayout(guesses.map((g) => ({ ...g, pos: pos(g.v) })).sort((a, b) => a.pos - b.pos));
+    $main().innerHTML = `${head}
+      <div class="numline-wrap">
+        <div class="numline">
+          ${marks.map((m, k) => `<div class="nl-mark ${m.best ? "best" : ""}" style="left:${m.pos * 100}%;--lane:${m.lane};animation-delay:${Math.round(150 + Math.min(k * 45, 700))}ms" title="${esc(m.name)}: ${fmtNum(m.v)}">
+              <span class="nl-name">${esc(m.name)}</span>${monogram(m.name)}<span class="nl-val">${fmtNum(m.v)}</span></div>`).join("")}
+          <div class="nl-axis"><span class="nl-end">${fmtNum(Math.round(lo))}</span><span class="nl-end r">${fmtNum(Math.round(hi))}</span></div>
+          <div class="nl-target" style="left:${pos(target) * 100}%"><span class="star">✦</span><span class="nl-tval">${fmtNum(target)}${q.unit ? ` <small>${esc(q.unit)}</small>` : ""}</span></div>
+        </div>
+        ${closestLine(r.closest, (c) => `${esc(c.name)} (${fmtNum(c.v)})`)}
       </div>`;
-    setTimeout(() => burstFrom($main().querySelector(".estimate-box"), 60), 150);
+    landTarget(".nl-target", guesses.length ? 1400 : 300);
     scheduleAuto();
     return;
   }
+
+  // ---- Prik-vraag: kaart met alle prikken ----
+  if (q.type === "pin") {
+    const pins = (r.pins || []).slice().sort((a, b) => a.y - b.y);
+    const pt = r.point || q.point || { x: 0.5, y: 0.5 };
+    $main().innerHTML = `${head}
+      <div class="pin-reveal">
+        <div class="pin-stage">
+          <img src="${q.image}" alt="">
+          ${pins.map((p, k) => `<span class="pin-mark ${p.best ? "best" : ""}" style="left:${p.x * 100}%;top:${p.y * 100}%;animation-delay:${Math.round(150 + Math.min(k * 40, 700))}ms" title="${esc(p.name)}">${esc(initials(p.name))}</span>`).join("")}
+          <span class="pin-mark correct-mark target" style="left:${pt.x * 100}%;top:${pt.y * 100}%">✦</span>
+        </div>
+        ${closestLine(r.closest, (c) => esc(c.name))}
+      </div>`;
+    landTarget(".pin-mark.target", pins.length ? 1300 : 300);
+    scheduleAuto();
+    return;
+  }
+
+  // ---- Dichtstbij-vraag: ranglijst van de keuzes ----
+  if (q.type === "closest") {
+    const ranked = (r.ranked || []).slice(0, 7);
+    $main().innerHTML = `${head}
+      <div class="closest-reveal">
+        <div class="closest-target"><span class="script">Doel</span> <b>${fmtNum(q.target)}</b>${q.unit ? ` <span class="muted">${esc(q.unit)}</span>` : ""}</div>
+        <div class="closest-list frame">
+          ${ranked.map((it, k) => `
+            <div class="cl-row ${it.best ? "best target" : ""}" style="animation-delay:${[0, 60, 110, 150, 185, 215, 240][k]}ms">
+              <span class="cl-name">${esc(it.label)}</span>
+              <span class="leader"></span>
+              <span class="cl-val">${fmtNum(it.value)}</span>
+              <span class="cl-diff">${it.err === 0 ? "precies!" : `${Number(it.value) > q.target ? "+" : "−"}${fmtNum(it.err)}`}</span>
+              <span class="cl-count">${it.count ? `${it.count} ${it.count === 1 ? "speler" : "spelers"}` : ""}</span>
+            </div>`).join("")}
+        </div>
+      </div>`;
+    landTarget(".cl-row.target", 700);
+    scheduleAuto();
+    return;
+  }
+
+  // ---- Meerkeuze / waar-niet-waar ----
+  sfx.pop();
+  setTimeout(() => sfx.reveal(), 180);
   const opts = optionsFor(q);
   const counts = r.counts || opts.map(() => 0);
   const max = Math.max(1, ...counts);
-  $main().innerHTML = `
-    <div class="q-head"><div class="q-text frame" style="animation:none">${esc(q.text)}</div></div>
+  $main().innerHTML = `${head}
     <div class="q-mid" style="grid-template-columns:1fr">
       <div class="dist">
         ${opts.map((o, k) => `
