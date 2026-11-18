@@ -5,7 +5,7 @@ import {
 } from "./firebase.js";
 import {
   shapeSvg, esc, optionsFor, computeResults, ranking, startSnow, confetti, resizeImage, fmtNum, TYPE_LABELS,
-  avatarOf, lightsHtml, countUp,
+  avatarOf, lightsHtml, countUp, monogram,
 } from "./common.js";
 import * as sfx from "./sound.js";
 import { SAMPLE_QUESTIONS } from "./samples.js";
@@ -26,15 +26,15 @@ startSnow(1);
 // ==================================================================
 function showSetupNeeded() {
   $app.innerHTML = `<div class="admin">${lightsHtml(16)}<div class="card">
-    <h1 style="color:var(--gold)">Bijna klaar!</h1>
+    <h1 style="color:var(--gold-light)">Bijna klaar</h1>
     <p>De quiz is nog niet gekoppeld aan Firebase. Volg de stappen in <b>README.md</b> en vul daarna
     <code>js/config.js</code> in met de gegevens van je Firebase-project.</p></div></div>`;
 }
 
 function showLogin(msg = "") {
   $app.innerHTML = `
-    <div class="admin">${lightsHtml(16)}<form class="card login pop" id="loginForm">
-      <h1 class="center" style="color:var(--gold)">🎄 Quizmaster</h1>
+    <div class="admin">${lightsHtml(16)}<form class="frame login enter" id="loginForm">
+      <h1 class="center" style="color:var(--gold-light)">Quizmaster</h1>
       <p class="center muted">Log in om de quiz te beheren en te starten.</p>
       <div class="field"><label for="email">E-mailadres</label><input class="input" id="email" type="email" autocomplete="username" required></div>
       <div class="field"><label for="pw">Wachtwoord</label><input class="input" id="pw" type="password" autocomplete="current-password" required></div>
@@ -68,7 +68,7 @@ function showDashboard() {
     <div class="admin">
       ${lightsHtml(16)}
       <div class="admin-head">
-        <h1>🎄 Quizmaster</h1>
+        <h1>Quizmaster</h1>
         <div class="row" style="flex:0 0 auto;gap:.5em">
           <button class="btn ghost small" id="logout">Uitloggen</button>
         </div>
@@ -76,7 +76,7 @@ function showDashboard() {
       <div id="resume"></div>
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:1em;flex-wrap:wrap;margin-bottom:1.2em">
         <div><b id="sumTitle">Kerstquiz</b><div class="muted" id="sumCount">0 vragen</div></div>
-        <button class="btn big red" id="startBtn">▶ Start de quiz</button>
+        <button class="btn big" id="startBtn">Start de quiz</button>
       </div>
       <div class="tabs">
         <button class="tab" data-tab="questions">Vragen</button>
@@ -461,12 +461,12 @@ function enterStage(code, g) {
       ${lightsHtml(26)}
       <div class="stage-top">
         <div class="stage-brand">
-          ${G.settings.logo ? `<img src="${G.settings.logo}" alt="">` : "🎄"}
+          ${G.settings.logo ? `<img src="${G.settings.logo}" alt="">` : ""}
           <span>${esc(G.settings.title || "Kerstquiz")}</span>
-          ${G.settings.company ? `<span class="company">· ${esc(G.settings.company)}</span>` : ""}
+          ${G.settings.company ? `<span class="company">${esc(G.settings.company)}</span>` : ""}
         </div>
         <div class="stage-controls">
-          <span class="pill" id="pCount">👥 0</span>
+          <span class="pill" id="pCount">0 spelers</span>
           <button class="icon-btn" id="muteBtn" title="Geluid aan/uit">${sfx.isMuted() ? "🔇" : "🔊"}</button>
           <button class="icon-btn" id="fsBtn" title="Volledig scherm">⛶</button>
           <button class="icon-btn" id="quitBtn" title="Terug naar beheer">✕</button>
@@ -477,8 +477,8 @@ function enterStage(code, g) {
         <div class="auto-bar hidden" id="autoBar"><div></div></div>
         <span id="bottomLeft">Meedoen: code <b style="color:var(--gold)">${code}</b></span>
         <div class="right">
-          <button class="icon-btn hidden" id="pauseBtn" title="Automatisch doorgaan pauzeren (P)">⏸ Pauze</button>
-          <button class="btn" id="nextBtn">Volgende ▶</button>
+          <button class="icon-btn hidden" id="pauseBtn" title="Automatisch doorgaan pauzeren (P)">Pauze</button>
+          <button class="btn" id="nextBtn">Volgende</button>
         </div>
       </div>
     </div>`;
@@ -501,7 +501,7 @@ function enterStage(code, g) {
     const before = Object.keys(G.players).length;
     G.players = s.val() || {};
     const n = Object.keys(G.players).length;
-    document.getElementById("pCount").textContent = `👥 ${n}`;
+    document.getElementById("pCount").textContent = `${n} ${n === 1 ? "speler" : "spelers"}`;
     if (G.state.phase === "lobby") { renderLobbyPlayers(); if (n > before) sfx.joinBlip(); }
     updateNextBtn();
   }));
@@ -542,7 +542,7 @@ function setNext(label, enabled = true, visible = true) {
   b.textContent = label; b.disabled = !enabled; b.classList.toggle("hidden", !visible);
 }
 function updateNextBtn() {
-  if (G.state.phase === "lobby") setNext("Start de quiz ▶", playerCount() > 0);
+  if (G.state.phase === "lobby") setNext("Start de quiz", playerCount() > 0);
 }
 
 async function setState(patch, extra = {}) {
@@ -568,7 +568,7 @@ function scheduleAuto() {
   const pb = document.getElementById("pauseBtn");
   if (pb) {
     pb.classList.toggle("hidden", !sec);
-    pb.textContent = G.paused ? "▶ Hervat" : "⏸ Pauze";
+    pb.textContent = G.paused ? "Hervat" : "Pauze";
     pb.classList.toggle("on", G.paused);
   }
   if (!sec || G.paused) return;
@@ -637,16 +637,18 @@ function showLobby() {
   $main().innerHTML = `
     <div class="lobby">
       <div class="join">
-        <div class="tag pop">
-          <div class="how">Scan de QR-code of ga naar</div>
-          <div class="url">${esc(shortUrl)}</div>
+        <div class="frame ivory invite">
+          <div class="script" style="color:var(--gold-deep)">Welkom bij de</div>
+          <div class="event">${esc(G.settings.title || "Kerstquiz")}</div>
           <div class="qr">${qrSvg}</div>
-          <div class="how">en vul deze code in:</div>
+          <div class="how">Scan de code met je telefoon, of ga naar</div>
+          <div class="url">${esc(shortUrl)}</div>
+          <div class="how">en vul deze code in</div>
           <div class="code">${G.code}</div>
         </div>
       </div>
       <div class="players">
-        <h2>Wie doet er mee? <span class="count-badge" id="pNum">0</span></h2>
+        <h2>Gastenlijst <span class="count-badge" id="pNum">0</span></h2>
         <div class="chips" id="chips"></div>
         <p class="muted" style="margin-top:auto;font-size:2vh">Klik op een naam om iemand te verwijderen.</p>
       </div>
@@ -661,10 +663,7 @@ function renderLobbyPlayers() {
   if (!el) return;
   const list = Object.entries(G.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
   const badge = document.getElementById("pNum");
-  if (badge.textContent !== String(list.length)) {
-    badge.textContent = list.length;
-    badge.classList.remove("pop"); void badge.offsetWidth; badge.classList.add("pop");
-  }
+  badge.textContent = `${list.length} ${list.length === 1 ? "gast" : "gasten"}`;
   // Alleen nieuwe namen toevoegen, zodat bestaande chips niet opnieuw animeren
   const have = new Set([...el.querySelectorAll(".chip")].map((c) => c.dataset.uid));
   const want = new Set(list.map(([uid]) => uid));
@@ -674,7 +673,7 @@ function renderLobbyPlayers() {
     if (have.has(uid)) continue;
     const b = document.createElement("button");
     b.className = "chip"; b.dataset.uid = uid; b.title = "Verwijderen";
-    b.innerHTML = `<span class="av">${avatarOf(p, uid)}</span><span>${esc(p.name)}</span>`;
+    b.innerHTML = `${monogram(p.name)}<span>${esc(p.name)}</span>`;
     b.onclick = async () => {
       if (confirm(`${p.name} verwijderen?`)) {
         await update(ref(db, `games/${G.code}`), { [`players/${uid}`]: null, [`scores/${uid}`]: null });
@@ -682,7 +681,7 @@ function renderLobbyPlayers() {
     };
     el.appendChild(b);
   }
-  if (!list.length) el.innerHTML = `<div class="waiting"><span class="floaty">🎅</span> Wachten op de eerste speler…</div>`;
+  if (!list.length) el.innerHTML = `<div class="waiting">Wachten op de eerste gast…</div>`;
 }
 
 async function startGameplay() {
@@ -704,13 +703,12 @@ async function startIntro(i) {
   sfx.whoosh();
   const q = G.qs[i];
   await setState({ phase: "intro", index: i, total: G.qs.length, qkey: `q${i}` });
-  const typeIcon = { mc: "🔠", tf: "⚖️", estimate: "🔢" }[q.type] || "❓";
   $main().innerHTML = `
     <div class="big-title">
-      <div class="bauble">${i + 1}</div>
-      <div class="kicker">Vraag ${i + 1} van ${G.qs.length}</div>
-      <div class="main rise">${esc(q.text)}</div>
-      ${q.double ? '<span class="badge-double">⭐ Dubbele punten</span>' : `<div class="sub">${typeIcon} ${esc(TYPE_LABELS[q.type])}</div>`}
+      <div class="numeral">${i + 1}</div>
+      <div class="numeral-of">van ${G.qs.length}</div>
+      <div class="rule" style="width:min(28vw,420px)"><span>✦</span></div>
+      <div class="sub enter-soft" style="animation-delay:200ms">${q.double ? '<span class="badge-double">Dubbele punten</span>' : esc(TYPE_LABELS[q.type])}</div>
       <div class="intro-bar"><div></div></div>
     </div>`;
   document.getElementById("bottomLeft").innerHTML = `Meedoen: code <b style="color:var(--gold)">${G.code}</b>`;
@@ -745,20 +743,20 @@ function showQuestion(resumed) {
   const opts = optionsFor(q);
   sfx.questionMusic();
   $main().innerHTML = `
-    <div class="q-head"><div class="q-text">${esc(q.text)}</div></div>
+    <div class="q-head"><div class="q-text frame">${esc(q.text)}</div></div>
     <div class="q-mid">
       <div class="timer-ring" id="timerRing">
         <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="45" fill="none" stroke-width="8"/>
           <circle class="prog" id="ringProg" cx="50" cy="50" r="45" fill="none" stroke-width="8" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg>
         <div class="num" id="timer">${G.state.duration}</div>
       </div>
-      <div class="q-image">${q.image ? `<img src="${q.image}" alt="">` : `<div class="placeholder floaty">${["🎄", "🎁", "⛄", "🔔", "🦌", "🍪"][i % 6]}</div>`}</div>
+      <div class="q-image">${q.image ? `<img src="${q.image}" alt="">` : `<div class="placeholder">✦</div>`}</div>
       <div class="answered"><b id="ansCount">0</b>antwoorden</div>
     </div>
     ${q.type === "estimate"
-      ? `<div class="estimate-box pop">🔢 Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
+      ? `<div class="estimate-box frame enter">Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
       : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span></div>`).join("")}</div>`}`;
-  setNext("Toon antwoord ▶", true);
+  setNext("Toon antwoord", true);
 
   if (G.answerUnsub) G.answerUnsub();
   let lastN = 0;
@@ -767,7 +765,7 @@ function showQuestion(resumed) {
     const el = document.getElementById("ansCount");
     if (el) {
       el.textContent = n;
-      if (n > lastN) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); sfx.joinBlip(); }
+      if (n > lastN) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
     }
     lastN = n;
     const active = Object.keys(G.players).length;
@@ -840,20 +838,19 @@ function renderReveal() {
   const r = G.reveal || {};
   sfx.reveal();
   const last = i >= G.qs.length - 1;
-  setNext(last ? "Naar de uitslag 🏆" : "Tussenstand ▶", true);
+  setNext(last ? "Naar de uitslag" : "Tussenstand", true);
   if (q.type === "estimate") {
     const closest = r.closest || [];
     $main().innerHTML = `
-      <div class="q-head"><div class="q-text">${esc(q.text)}</div></div>
+      <div class="q-head"><div class="q-text frame">${esc(q.text)}</div></div>
       <div class="big-title">
         <div class="kicker">Het goede antwoord</div>
-        <div class="estimate-box pop"><div class="val">${fmtNum(q.correct)}${q.unit ? ` <span style="font-size:.5em">${esc(q.unit)}</span>` : ""}</div></div>
-        ${closest.length ? `<div class="sub">🎯 Het dichtst in de buurt</div>
-          <div class="estimate-list">${closest.slice(0, 6).map((c) => `<span class="pill pop">${esc(c.name)}: ${fmtNum(c.v)}</span>`).join("")}</div>`
+        <div class="estimate-box enter"><div class="val">${fmtNum(q.correct)}${q.unit ? ` <span style="font-size:.5em">${esc(q.unit)}</span>` : ""}</div></div>
+        ${closest.length ? `<div class="sub">Het dichtst in de buurt</div>
+          <div class="estimate-list">${closest.slice(0, 6).map((c) => `<span class="pill">${esc(c.name)}: ${fmtNum(c.v)}</span>`).join("")}</div>`
           : `<div class="sub">Niemand heeft een schatting gegeven.</div>`}
         <div class="sub">${r.answered || 0} van ${playerCount()} spelers antwoordden</div>
       </div>`;
-    if (closest.length) confetti(70);
     scheduleAuto();
     return;
   }
@@ -861,12 +858,12 @@ function renderReveal() {
   const counts = r.counts || opts.map(() => 0);
   const max = Math.max(1, ...counts);
   $main().innerHTML = `
-    <div class="q-head"><div class="q-text">${esc(q.text)}</div></div>
+    <div class="q-head"><div class="q-text frame" style="animation:none">${esc(q.text)}</div></div>
     <div class="q-mid" style="grid-template-columns:1fr">
       <div class="dist">
         ${opts.map((o, k) => `
           <div class="bar-wrap">
-            <div class="num">${counts[k] || 0}${k === q.correct ? " ✔" : ""}</div>
+            <div class="num">${counts[k] || 0}</div>
             <div class="bar opt-${k}" style="height:${Math.max(4, ((counts[k] || 0) / max) * 85)}%;animation-delay:${k * 0.1}s;${k === q.correct ? "" : "opacity:.35"}">${shapeSvg(k)}</div>
           </div>`).join("")}
       </div>
@@ -875,7 +872,6 @@ function renderReveal() {
       ${opts.map((o, k) => `<div class="s-answer opt-${k} ${k === q.correct ? "correct" : "dim"}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span>
         ${k === q.correct ? '<span class="check count">✔</span>' : ""}</div>`).join("")}
     </div>`;
-  if (counts[q.correct] > 0) confetti(70);
   scheduleAuto();
 }
 
@@ -896,20 +892,23 @@ async function showLeaderboard() {
   const prevRank = Object.fromEntries(ranking(before).map((r) => [r.uid, r.rank]));
   const top = ranking(G.scores).slice(0, 5);
   sfx.lobbyMusic();
-  const medal = (n) => ({ 1: "🥇", 2: "🥈", 3: "🥉" }[n] || n);
   $main().innerHTML = `
-    <div class="big-title" style="justify-content:flex-start;padding-top:1vh">
-      <div class="kicker">🏆 Tussenstand · na vraag ${G.state.index + 1} van ${G.qs.length}</div>
-      <div class="board">
+    <div class="big-title" style="justify-content:center">
+      <div class="board frame">
+        <div class="center" style="margin-bottom:2vh">
+          <div style="font-family:var(--serif);font-size:4.4vh;color:var(--gold-light)">Tussenstand</div>
+          <div class="script" style="font-size:2.6vh;color:var(--muted)">na vraag ${G.state.index + 1} van ${G.qs.length}</div>
+        </div>
         ${top.map((r, k) => {
           const d = (prevRank[r.uid] || r.rank) - r.rank;
           const move = d > 0 ? `<span class="move up">▲ ${d}</span>` : d < 0 ? `<span class="move down">▼ ${-d}</span>` : '<span class="move"></span>';
           const from = before[r.uid]?.score ?? r.score;
           return `
-          <div class="board-row ${r.rank === 1 ? "first" : ""}" style="animation-delay:${k * 0.1}s">
-            <span class="rank">${medal(r.rank)}</span><span class="av">${r.avatar || avatarOf(null, r.uid)}</span>
+          <div class="board-row ${r.rank === 1 ? "first" : ""}" style="animation-delay:${[0, 70, 125, 165, 195][k]}ms">
+            <span class="rank">${r.rank}</span>${monogram(r.name)}
             <span class="name">${esc(r.name)}</span>
-            ${r.streak >= 2 ? `<span class="streak">🔥 ${r.streak}</span>` : ""}
+            <span class="leader"></span>
+            ${r.streak >= 2 ? `<span class="streak">${r.streak} op rij</span>` : ""}
             ${move}
             <span class="pts" data-from="${from}" data-to="${r.score}">${fmtNum(from)}</span>
           </div>`;
@@ -919,7 +918,7 @@ async function showLeaderboard() {
   $main().querySelectorAll(".pts[data-to]").forEach((el, k) => {
     setTimeout(() => countUp(el, Number(el.dataset.from), Number(el.dataset.to), 1100), 300 + k * 100);
   });
-  setNext("Volgende vraag ▶", true);
+  setNext("Volgende vraag", true);
   scheduleAuto();
 }
 
@@ -933,26 +932,28 @@ async function showPodium() {
   const [p1, p2, p3] = list;
   const step = (p, cls, n) => `
     <div class="step ${cls}" id="step-${n}">
-      <div class="av">${p ? p.avatar || avatarOf(null, p.uid) : ""}</div>
+      <div class="av">${p ? monogram(p.name) : ""}</div>
       <div class="who">${p ? esc(p.name) : "–"}</div>
       <div class="pts">${p ? fmtNum(p.score) + " punten" : ""}</div>
       <div class="block">${n}</div>
     </div>`;
   $main().innerHTML = `
-    <div class="big-title" style="flex:0;padding-top:1vh"><div class="kicker">🏆 De winnaars 🏆</div></div>
-    <div class="podium">${step(p2, "p2", 2)}${step(p1, "p1", 1)}${step(p3, "p3", 3)}</div>
+    <div class="podium-title enter-soft">En de winnaars zijn</div>
+    <div class="podium" id="podium">${step(p2, "p2", 2)}${step(p1, "p1", 1)}${step(p3, "p3", 3)}</div>
     <div class="estimate-list" id="rest" style="opacity:0;transition:opacity .8s">
-      ${list.slice(3, 10).map((r) => `<span class="pill">${r.rank}. ${r.avatar || ""} ${esc(r.name)} · ${fmtNum(r.score)}</span>`).join("")}
+      ${list.slice(3, 10).map((r) => `<span class="pill">${r.rank}. ${esc(r.name)}, ${fmtNum(r.score)}</span>`).join("")}
     </div>`;
   setNext("", false, false);
   sfx.stopMusic();
   const show = (n) => document.getElementById(`step-${n}`)?.classList.add("show");
   const wait = (ms) => new Promise((res) => setTimeout(res, ms));
-  sfx.drumroll(2.2); await wait(2300); show(3); sfx.reveal(); confetti(40);
+  sfx.drumroll(2.2); await wait(2300); show(3); sfx.reveal();
   await wait(1500);
-  sfx.drumroll(2.2); await wait(2300); show(2); sfx.reveal(); confetti(60);
+  sfx.drumroll(2.2); await wait(2300); show(2); sfx.reveal();
   await wait(1500);
-  sfx.drumroll(3.2); await wait(3300); show(1); sfx.fanfare(); confetti(220);
+  sfx.drumroll(3.2); await wait(3300);
+  document.getElementById("podium")?.classList.add("lit");
+  show(1); sfx.fanfare(); confetti(220);
   setTimeout(() => confetti(160), 1200);
   setTimeout(() => confetti(160), 2600);
   const rest = document.getElementById("rest");

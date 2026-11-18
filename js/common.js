@@ -12,11 +12,19 @@ export function avatarOf(p, uid = "") {
   return AVATARS[h % AVATARS.length];
 }
 
-/** Een slinger kerstlampjes. */
-export function lightsHtml(n = 18) {
-  return `<div class="lights" aria-hidden="true">${Array.from({ length: n }, (_, i) =>
-    `<span class="bulb c${i % 4}" style="animation-delay:${((i * 0.37) % 1.6).toFixed(2)}s"></span>`).join("")}</div>`;
+/** Initialen voor een monogram, bijv. "Sanne de Vries" → "SV". */
+export function initials(name) {
+  const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || "?";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : (parts[0]?.[1] || "");
+  return (first + last).toUpperCase();
 }
+export function monogram(name) {
+  return `<span class="monogram" aria-hidden="true">${esc(initials(name))}</span>`;
+}
+
+/** Vroeger een slinger lampjes; in de galastijl bewust leeg. */
+export function lightsHtml() { return ""; }
 
 /** Laat een getal in een element oplopen. */
 export function countUp(el, from, to, ms = 900) {
@@ -162,28 +170,39 @@ export function ranking(scores) {
 // Sneeuw
 // ------------------------------------------------------------------
 export function startSnow(density = 1) {
+  // Langzaam twinkelend goudstof
   const c = document.getElementById("snow");
   if (!c || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const ctx = c.getContext("2d");
-  let w, h, flakes = [];
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  let w, h, dust = [];
   const resize = () => {
-    w = c.width = innerWidth; h = c.height = innerHeight;
-    const n = Math.round((w * h) / 14000 * density);
-    flakes = Array.from({ length: n }, () => newFlake(true));
+    w = innerWidth; h = innerHeight;
+    c.width = w * dpr; c.height = h * dpr; c.style.width = w + "px"; c.style.height = h + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round((w * h) / 26000 * density);
+    dust = Array.from({ length: n }, () => ({
+      x: Math.random() * w, y: Math.random() * h, r: Math.random() * 1.3 + 0.3,
+      vy: Math.random() * 0.12 + 0.03, phase: Math.random() * Math.PI * 2, speed: Math.random() * 0.02 + 0.006,
+      star: Math.random() < 0.12,
+    }));
   };
-  const newFlake = (anywhere) => ({
-    x: Math.random() * w, y: anywhere ? Math.random() * h : -10,
-    r: Math.random() * 2.6 + 0.8, s: Math.random() * 0.6 + 0.3, d: Math.random() * Math.PI * 2,
-  });
   addEventListener("resize", resize);
   resize();
   const tick = () => {
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(255,255,255,.75)";
-    for (const f of flakes) {
-      f.d += 0.01; f.y += f.s; f.x += Math.sin(f.d) * 0.4;
-      if (f.y > h + 5) Object.assign(f, newFlake(false));
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+    for (const d of dust) {
+      d.phase += d.speed; d.y += d.vy;
+      if (d.y > h + 4) { d.y = -4; d.x = Math.random() * w; }
+      const a = 0.15 + 0.55 * (0.5 + 0.5 * Math.sin(d.phase));
+      ctx.fillStyle = `rgba(241, 221, 170, ${a.toFixed(3)})`;
+      if (d.star) {
+        const s = d.r * 3 * a;
+        ctx.fillRect(d.x - s, d.y - 0.4, s * 2, 0.8);
+        ctx.fillRect(d.x - 0.4, d.y - s, 0.8, s * 2);
+      } else {
+        ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
+      }
     }
     requestAnimationFrame(tick);
   };
@@ -197,10 +216,10 @@ let confettiParts = [];
 let confettiRunning = false;
 export function confetti(amount = 160) {
   const c = document.getElementById("confetti");
-  if (!c) return;
+  if (!c || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const ctx = c.getContext("2d");
   c.width = innerWidth; c.height = innerHeight;
-  const colors = ["#f2c14e", "#c62839", "#2fb365", "#ffffff", "#2a6fb5"];
+  const colors = ["#f1ddaa", "#d4af6a", "#b48a3e", "#fbf6ea", "#e9cf8f"];
   for (let i = 0; i < amount; i++) {
     const fromLeft = i % 2 === 0;
     confettiParts.push({

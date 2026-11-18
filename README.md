@@ -11,9 +11,9 @@ Een pubquiz voor de kerstborrel van het werk. De vragen staan op het grote scher
 - Vier soorten vragen: **meerkeuze**, **waar/niet waar**, **schatvragen** en vragen **met een foto** (de foto staat alleen op het grote scherm)
 - Puntentelling zoals bij Kahoot: tot 1000 punten per vraag, meer voor snel antwoorden, tot +500 bonus voor meerdere goede antwoorden op rij, en per vraag in te stellen ⭐ dubbele punten
 - Bij een schatvraag krijgt wie er het dichtst bij zit 1000 punten. De rest krijgt minder, naar hoe ver ze ernaast zitten
-- Na elke vraag zie je de verdeling van de antwoorden en de tussenstand (met wie er stijgt ▲ of daalt ▼). De quiz gaat na 10 seconden vanzelf verder; je kunt pauzeren (⏸ of toets P), zelf doorklikken, of het automatisch doorgaan bij Instellingen aanpassen of uitzetten
-- Spelers kiezen een kerstfiguur als avatar (🎅🦌⛄🧝…)
-- Kerstsfeer met knipperende lampjes, sneeuw, muziek en geluidseffecten (in de browser gemaakt, geen bestanden nodig) en aan het eind een podium met tromgeroffel en confetti
+- Na elke vraag zie je de verdeling van de antwoorden en de tussenstand (met wie er stijgt ▲ of daalt ▼). De quiz gaat na 10 seconden vanzelf verder; je kunt pauzeren (knop Pauze of toets P), zelf doorklikken, of het automatisch doorgaan bij Instellingen aanpassen of uitzetten
+- Stijl "kerstgala": fluweelgroen, champagnegoud en ivoor, een gouden uitnodigingskaart, een gastenlijst met monogrammen, een tussenstand als menukaart en een podium met spotlight
+- Sfeer met goudglitter, muziek en geluidseffecten (in de browser gemaakt, geen bestanden nodig) en aan het eind een podium met tromgeroffel en confetti
 - Bewerkscherm voor vragen, foto's, volgorde, bedrijfsnaam en logo
 - Beveiligd: alleen jij kunt inloggen als quizmaster. Spelers kunnen de vragen en antwoorden niet vooraf inzien, ook niet met technische trucjes
 
@@ -76,7 +76,7 @@ Tip: vragen over het werk maken het leukst. Denk aan "Welke collega is dit als b
 1. Sluit de laptop aan op het grote scherm en op de speakers.
 2. Open `host.html`, log in en klik op **▶ Start de quiz**. Klik op ⛶ voor volledig scherm.
 3. Collega's scannen de QR-code. Je ziet de namen binnenkomen. Klik op een naam om iemand te verwijderen.
-4. Klik op **Volgende** of druk op **spatie** om verder te gaan. Een vraag stopt vanzelf als de tijd om is of als iedereen heeft geantwoord. Daarna gaat de quiz na 10 seconden vanzelf naar de tussenstand en de volgende vraag. Wil je even iets vertellen? Druk op **P** of klik op **⏸ Pauze**.
+4. Klik op **Volgende** of druk op **spatie** om verder te gaan. Een vraag stopt vanzelf als de tijd om is of als iedereen heeft geantwoord. Daarna gaat de quiz na 10 seconden vanzelf naar de tussenstand en de volgende vraag. Wil je even iets vertellen? Druk op **P** of klik op **Pauze**.
 5. Na de laatste vraag volgt het podium: eerst plek 3, dan 2, dan 1. 🏆
 
 **Gaat er iets mis?** Herlaad de pagina gewoon. Klik daarna in het beheerscherm op **Verder gaan**, dan gaat de quiz verder waar hij was. Spelers die hun telefoon herladen, komen ook vanzelf terug in het spel met hun punten.
