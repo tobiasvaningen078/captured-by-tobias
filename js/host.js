@@ -5,6 +5,7 @@ import {
 } from "./firebase.js";
 import {
   shapeSvg, esc, optionsFor, computeResults, ranking, startSnow, confetti, resizeImage, fmtNum, TYPE_LABELS,
+  avatarOf, lightsHtml, countUp,
 } from "./common.js";
 import * as sfx from "./sound.js";
 import { SAMPLE_QUESTIONS } from "./samples.js";
@@ -24,7 +25,7 @@ startSnow(1);
 // Inloggen
 // ==================================================================
 function showSetupNeeded() {
-  $app.innerHTML = `<div class="admin"><div class="card">
+  $app.innerHTML = `<div class="admin">${lightsHtml(16)}<div class="card">
     <h1 style="color:var(--gold)">Bijna klaar!</h1>
     <p>De quiz is nog niet gekoppeld aan Firebase. Volg de stappen in <b>README.md</b> en vul daarna
     <code>js/config.js</code> in met de gegevens van je Firebase-project.</p></div></div>`;
@@ -32,7 +33,7 @@ function showSetupNeeded() {
 
 function showLogin(msg = "") {
   $app.innerHTML = `
-    <div class="admin"><form class="card login" id="loginForm">
+    <div class="admin">${lightsHtml(16)}<form class="card login pop" id="loginForm">
       <h1 class="center" style="color:var(--gold)">🎄 Quizmaster</h1>
       <p class="center muted">Log in om de quiz te beheren en te starten.</p>
       <div class="field"><label for="email">E-mailadres</label><input class="input" id="email" type="email" autocomplete="username" required></div>
@@ -65,6 +66,7 @@ function showDashboard() {
   sfx.stopMusic();
   $app.innerHTML = `
     <div class="admin">
+      ${lightsHtml(16)}
       <div class="admin-head">
         <h1>🎄 Quizmaster</h1>
         <div class="row" style="flex:0 0 auto;gap:.5em">
@@ -364,12 +366,19 @@ function closeModal() { $modal.innerHTML = ""; }
 
 // ---------------- Instellingen ----------------
 function renderSettings(body) {
-  const s = { title: "Kerstquiz", company: "", ...settings };
+  const s = { title: "Kerstquiz", company: "", autoNext: 10, ...settings };
   body.innerHTML = `
     <form class="card" id="setForm">
       <div class="row">
         <div class="field"><label for="sTitle">Naam van de quiz</label><input class="input" id="sTitle" maxlength="40" value="${esc(s.title)}"></div>
         <div class="field"><label for="sCompany">Bedrijfsnaam</label><input class="input" id="sCompany" maxlength="40" value="${esc(s.company)}" placeholder="Bijv. Jansen & Co"></div>
+      </div>
+      <div class="field"><label for="sAuto">Automatisch doorgaan na het antwoord en de tussenstand</label>
+        <select class="input" id="sAuto">
+          ${[[0, "Uit – ik klik zelf door"], [5, "Na 5 seconden"], [8, "Na 8 seconden"], [10, "Na 10 seconden"], [15, "Na 15 seconden"], [20, "Na 20 seconden"]]
+            .map(([v, l]) => `<option value="${v}" ${Number(s.autoNext) === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select>
+        <span class="muted" style="font-size:.85em">Tijdens de quiz kun je dit altijd pauzeren met de knop ⏸ of de toets P.</span>
       </div>
       <div class="field"><label>Logo</label>
         ${s.logo ? `<div><img class="logo-preview" src="${s.logo}" alt="Logo"></div><div><button type="button" class="btn ghost small" id="rmLogo">Logo verwijderen</button></div>` : ""}
@@ -385,6 +394,7 @@ function renderSettings(body) {
     await update(ref(db, base), {
       title: document.getElementById("sTitle").value.trim() || "Kerstquiz",
       company: document.getElementById("sCompany").value.trim(),
+      autoNext: Number(document.getElementById("sAuto").value),
     });
     document.getElementById("sOk").textContent = "Opgeslagen ✓";
   };
@@ -404,6 +414,7 @@ function renderSettings(body) {
 const G = {
   code: null, qs: [], settings: {}, players: {}, scores: {}, state: {}, reveal: null,
   unsubs: [], timerInt: null, answerUnsub: null, busy: false, introTimer: null,
+  autoTimer: null, paused: false, prevRanks: {},
 };
 
 async function startNewGame() {
@@ -419,7 +430,10 @@ async function startNewGame() {
     }
     if (!code) throw new Error("Geen vrije code gevonden");
     const qs = questions.map(({ id, order, ...q }) => q);
-    const st = { title: settings.title || "Kerstquiz", company: settings.company || "", logo: settings.logo || null };
+    const st = {
+      title: settings.title || "Kerstquiz", company: settings.company || "", logo: settings.logo || null,
+      autoNext: settings.autoNext ?? 10,
+    };
     const game = {
       host: user.uid, createdAt: serverTimestamp(), settings: st, questions: qs,
       state: { phase: "lobby", index: -1, total: qs.length },
@@ -440,10 +454,11 @@ function enterStage(code, g) {
   sfx.unlock();
   Object.assign(G, {
     code, qs: g.questions || [], settings: g.settings || {}, players: g.players || {}, scores: g.scores || {},
-    state: g.state || { phase: "lobby" }, reveal: g.reveal || null, busy: false,
+    state: g.state || { phase: "lobby" }, reveal: g.reveal || null, busy: false, paused: false, prevRanks: {},
   });
   $app.innerHTML = `
     <div class="stage">
+      ${lightsHtml(26)}
       <div class="stage-top">
         <div class="stage-brand">
           ${G.settings.logo ? `<img src="${G.settings.logo}" alt="">` : "🎄"}
@@ -459,8 +474,12 @@ function enterStage(code, g) {
       </div>
       <div class="stage-main" id="main"></div>
       <div class="stage-bottom">
+        <div class="auto-bar hidden" id="autoBar"><div></div></div>
         <span id="bottomLeft">Meedoen: code <b style="color:var(--gold)">${code}</b></span>
-        <button class="btn" id="nextBtn">Volgende ▶</button>
+        <div class="right">
+          <button class="icon-btn hidden" id="pauseBtn" title="Automatisch doorgaan pauzeren (P)">⏸ Pauze</button>
+          <button class="btn" id="nextBtn">Volgende ▶</button>
+        </div>
       </div>
     </div>`;
   document.getElementById("muteBtn").onclick = (e) => {
@@ -474,6 +493,7 @@ function enterStage(code, g) {
     leaveStage();
   };
   document.getElementById("nextBtn").onclick = next;
+  document.getElementById("pauseBtn").onclick = togglePause;
   document.addEventListener("keydown", onKey);
 
   const base = `games/${code}`;
@@ -498,13 +518,14 @@ function leaveStage() {
 function cleanupStage() {
   G.unsubs.forEach((u) => u()); G.unsubs = [];
   if (G.answerUnsub) { G.answerUnsub(); G.answerUnsub = null; }
-  clearInterval(G.timerInt); clearTimeout(G.introTimer);
+  clearInterval(G.timerInt); clearTimeout(G.introTimer); clearAuto();
   document.removeEventListener("keydown", onKey);
   sfx.stopMusic();
 }
 
 function onKey(e) {
   if (e.target.matches("input, textarea, select")) return;
+  if (e.key === "p" || e.key === "P") { e.preventDefault(); togglePause(); return; }
   if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") {
     e.preventDefault();
     const b = document.getElementById("nextBtn");
@@ -531,8 +552,51 @@ async function setState(patch, extra = {}) {
   await update(ref(db, `games/${G.code}`), upd);
 }
 
+// ---------------- Automatisch doorgaan ----------------
+function autoSeconds() { return Number(G.settings.autoNext ?? 10) || 0; }
+
+function clearAuto() {
+  clearTimeout(G.autoTimer); G.autoTimer = null;
+  const bar = document.getElementById("autoBar");
+  if (bar) { bar.classList.add("hidden"); bar.firstElementChild.style.transition = "none"; bar.firstElementChild.style.width = "0"; }
+}
+
+/** Start het aftellen naar de volgende stap (alleen na antwoord en tussenstand). */
+function scheduleAuto() {
+  clearAuto();
+  const sec = autoSeconds();
+  const pb = document.getElementById("pauseBtn");
+  if (pb) {
+    pb.classList.toggle("hidden", !sec);
+    pb.textContent = G.paused ? "▶ Hervat" : "⏸ Pauze";
+    pb.classList.toggle("on", G.paused);
+  }
+  if (!sec || G.paused) return;
+  const bar = document.getElementById("autoBar");
+  if (bar) {
+    const fill = bar.firstElementChild;
+    bar.classList.remove("hidden");
+    fill.style.transition = "none"; fill.style.width = "0";
+    void fill.offsetWidth;
+    fill.style.transition = `width ${sec}s linear`; fill.style.width = "100%";
+  }
+  const phase = G.state.phase;
+  G.autoTimer = setTimeout(() => { if (G.state.phase === phase) next(); }, sec * 1000);
+}
+
+function hidePause() { const pb = document.getElementById("pauseBtn"); if (pb) pb.classList.add("hidden"); }
+
+function togglePause() {
+  if (!autoSeconds() || !["reveal", "leaderboard"].includes(G.state.phase)) return;
+  G.paused = !G.paused;
+  if (G.paused) clearAuto();
+  scheduleAuto();
+}
+
 function next() {
   if (G.busy) return;
+  clearAuto();
+  hidePause();
   sfx.unlock();
   const p = G.state.phase;
   if (p === "lobby") startGameplay();
@@ -573,14 +637,16 @@ function showLobby() {
   $main().innerHTML = `
     <div class="lobby">
       <div class="join">
-        <div class="how">Scan de QR-code of ga naar</div>
-        <div class="url">${esc(shortUrl)}</div>
-        <div class="qr">${qrSvg}</div>
-        <div class="how">en vul deze code in:</div>
-        <div class="code">${G.code}</div>
+        <div class="tag pop">
+          <div class="how">Scan de QR-code of ga naar</div>
+          <div class="url">${esc(shortUrl)}</div>
+          <div class="qr">${qrSvg}</div>
+          <div class="how">en vul deze code in:</div>
+          <div class="code">${G.code}</div>
+        </div>
       </div>
       <div class="players">
-        <h2>Spelers <span class="muted" id="pNum"></span></h2>
+        <h2>Wie doet er mee? <span class="count-badge" id="pNum">0</span></h2>
         <div class="chips" id="chips"></div>
         <p class="muted" style="margin-top:auto;font-size:2vh">Klik op een naam om iemand te verwijderen.</p>
       </div>
@@ -594,16 +660,29 @@ function renderLobbyPlayers() {
   const el = document.getElementById("chips");
   if (!el) return;
   const list = Object.entries(G.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
-  document.getElementById("pNum").textContent = `(${list.length})`;
-  el.innerHTML = list.length
-    ? list.map(([uid, p]) => `<button class="chip" data-uid="${uid}" title="Verwijderen">${esc(p.name)}</button>`).join("")
-    : `<p class="muted" style="font-size:2.6vh">Wachten op de eerste speler… 🎅</p>`;
-  el.querySelectorAll(".chip").forEach((c) => (c.onclick = async () => {
-    const p = G.players[c.dataset.uid];
-    if (p && confirm(`${p.name} verwijderen?`)) {
-      await update(ref(db, `games/${G.code}`), { [`players/${c.dataset.uid}`]: null, [`scores/${c.dataset.uid}`]: null });
-    }
-  }));
+  const badge = document.getElementById("pNum");
+  if (badge.textContent !== String(list.length)) {
+    badge.textContent = list.length;
+    badge.classList.remove("pop"); void badge.offsetWidth; badge.classList.add("pop");
+  }
+  // Alleen nieuwe namen toevoegen, zodat bestaande chips niet opnieuw animeren
+  const have = new Set([...el.querySelectorAll(".chip")].map((c) => c.dataset.uid));
+  const want = new Set(list.map(([uid]) => uid));
+  el.querySelectorAll(".chip").forEach((c) => { if (!want.has(c.dataset.uid)) c.remove(); });
+  el.querySelector(".waiting")?.remove();
+  for (const [uid, p] of list) {
+    if (have.has(uid)) continue;
+    const b = document.createElement("button");
+    b.className = "chip"; b.dataset.uid = uid; b.title = "Verwijderen";
+    b.innerHTML = `<span class="av">${avatarOf(p, uid)}</span><span>${esc(p.name)}</span>`;
+    b.onclick = async () => {
+      if (confirm(`${p.name} verwijderen?`)) {
+        await update(ref(db, `games/${G.code}`), { [`players/${uid}`]: null, [`scores/${uid}`]: null });
+      }
+    };
+    el.appendChild(b);
+  }
+  if (!list.length) el.innerHTML = `<div class="waiting"><span class="floaty">🎅</span> Wachten op de eerste speler…</div>`;
 }
 
 async function startGameplay() {
@@ -611,7 +690,7 @@ async function startGameplay() {
   // Iedereen begint met 0 punten zodat ze op het scorebord staan.
   const upd = {};
   for (const [uid, p] of Object.entries(G.players)) {
-    if (!G.scores[uid]) upd[`scores/${uid}`] = { name: p.name, score: 0, streak: 0 };
+    if (!G.scores[uid]) upd[`scores/${uid}`] = { name: p.name, avatar: avatarOf(p, uid), score: 0, streak: 0 };
   }
   if (Object.keys(upd).length) await update(ref(db, `games/${G.code}`), upd);
   G.busy = false;
@@ -625,11 +704,14 @@ async function startIntro(i) {
   sfx.whoosh();
   const q = G.qs[i];
   await setState({ phase: "intro", index: i, total: G.qs.length, qkey: `q${i}` });
+  const typeIcon = { mc: "🔠", tf: "⚖️", estimate: "🔢" }[q.type] || "❓";
   $main().innerHTML = `
     <div class="big-title">
+      <div class="bauble">${i + 1}</div>
       <div class="kicker">Vraag ${i + 1} van ${G.qs.length}</div>
-      <div class="main">${esc(q.text)}</div>
-      ${q.double ? '<span class="badge-double">⭐ Dubbele punten</span>' : `<div class="sub">${esc(TYPE_LABELS[q.type])}</div>`}
+      <div class="main rise">${esc(q.text)}</div>
+      ${q.double ? '<span class="badge-double">⭐ Dubbele punten</span>' : `<div class="sub">${typeIcon} ${esc(TYPE_LABELS[q.type])}</div>`}
+      <div class="intro-bar"><div></div></div>
     </div>`;
   document.getElementById("bottomLeft").innerHTML = `Meedoen: code <b style="color:var(--gold)">${G.code}</b>`;
   setNext("", false, false);
@@ -655,6 +737,8 @@ async function startQuestion(i) {
   showQuestion(false);
 }
 
+const RING = 2 * Math.PI * 45;
+
 function showQuestion(resumed) {
   const i = G.state.index;
   const q = G.qs[i];
@@ -663,33 +747,46 @@ function showQuestion(resumed) {
   $main().innerHTML = `
     <div class="q-head"><div class="q-text">${esc(q.text)}</div></div>
     <div class="q-mid">
-      <div class="timer" id="timer">${G.state.duration}</div>
-      <div class="q-image">${q.image ? `<img src="${q.image}" alt="">` : `<div class="placeholder">${["🎄", "🎁", "⛄", "🔔", "🦌", "🍪"][i % 6]}</div>`}</div>
+      <div class="timer-ring" id="timerRing">
+        <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="45" fill="none" stroke-width="8"/>
+          <circle class="prog" id="ringProg" cx="50" cy="50" r="45" fill="none" stroke-width="8" stroke-dasharray="${RING}" stroke-dashoffset="0"/></svg>
+        <div class="num" id="timer">${G.state.duration}</div>
+      </div>
+      <div class="q-image">${q.image ? `<img src="${q.image}" alt="">` : `<div class="placeholder floaty">${["🎄", "🎁", "⛄", "🔔", "🦌", "🍪"][i % 6]}</div>`}</div>
       <div class="answered"><b id="ansCount">0</b>antwoorden</div>
     </div>
     ${q.type === "estimate"
-      ? `<div class="estimate-box">🔢 Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
-      : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}">${shapeSvg(k)}<span>${esc(o)}</span></div>`).join("")}</div>`}`;
+      ? `<div class="estimate-box pop">🔢 Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
+      : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span></div>`).join("")}</div>`}`;
   setNext("Toon antwoord ▶", true);
 
   if (G.answerUnsub) G.answerUnsub();
+  let lastN = 0;
   G.answerUnsub = onValue(ref(db, `games/${G.code}/answers/${G.state.qkey}`), (s) => {
     const n = s.size || Object.keys(s.val() || {}).length;
     const el = document.getElementById("ansCount");
-    if (el) el.textContent = n;
+    if (el) {
+      el.textContent = n;
+      if (n > lastN) { el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); sfx.joinBlip(); }
+    }
+    lastN = n;
     const active = Object.keys(G.players).length;
     if (G.state.phase === "question" && active > 0 && n >= active) setTimeout(() => doReveal(), 600);
   });
 
   clearInterval(G.timerInt);
   let lastShown = null;
-  const endAt = G.state.startedAt + G.state.duration * 1000;
+  const durMs = G.state.duration * 1000;
+  const endAt = G.state.startedAt + durMs;
   const tickFn = () => {
-    const left = Math.max(0, Math.ceil((endAt - serverNow()) / 1000));
+    const leftMs = Math.max(0, endAt - serverNow());
+    const left = Math.ceil(leftMs / 1000);
+    const prog = document.getElementById("ringProg");
+    if (prog) prog.style.strokeDashoffset = String(RING * (1 - leftMs / durMs));
     const el = document.getElementById("timer");
     if (el && left !== lastShown) {
       el.textContent = left;
-      el.classList.toggle("low", left <= 5);
+      document.getElementById("timerRing")?.classList.toggle("low", left <= 5);
       if (left <= 5 && left > 0) { sfx.tick(); sfx.hurry(); }
       lastShown = left;
     }
@@ -750,12 +847,14 @@ function renderReveal() {
       <div class="q-head"><div class="q-text">${esc(q.text)}</div></div>
       <div class="big-title">
         <div class="kicker">Het goede antwoord</div>
-        <div class="estimate-box"><div class="val">${fmtNum(q.correct)}${q.unit ? ` <span style="font-size:.5em">${esc(q.unit)}</span>` : ""}</div></div>
-        ${closest.length ? `<div class="sub">Dichtstbij 🎯</div>
-          <div class="estimate-list">${closest.slice(0, 6).map((c) => `<span class="pill">${esc(c.name)}: ${fmtNum(c.v)}</span>`).join("")}</div>`
+        <div class="estimate-box pop"><div class="val">${fmtNum(q.correct)}${q.unit ? ` <span style="font-size:.5em">${esc(q.unit)}</span>` : ""}</div></div>
+        ${closest.length ? `<div class="sub">🎯 Het dichtst in de buurt</div>
+          <div class="estimate-list">${closest.slice(0, 6).map((c) => `<span class="pill pop">${esc(c.name)}: ${fmtNum(c.v)}</span>`).join("")}</div>`
           : `<div class="sub">Niemand heeft een schatting gegeven.</div>`}
         <div class="sub">${r.answered || 0} van ${playerCount()} spelers antwoordden</div>
       </div>`;
+    if (closest.length) confetti(70);
+    scheduleAuto();
     return;
   }
   const opts = optionsFor(q);
@@ -767,15 +866,17 @@ function renderReveal() {
       <div class="dist">
         ${opts.map((o, k) => `
           <div class="bar-wrap">
-            <div class="num">${counts[k] || 0}</div>
-            <div class="bar opt-${k}" style="height:${Math.max(4, ((counts[k] || 0) / max) * 85)}%;${k === q.correct ? "" : "opacity:.35"}">${shapeSvg(k)}</div>
+            <div class="num">${counts[k] || 0}${k === q.correct ? " ✔" : ""}</div>
+            <div class="bar opt-${k}" style="height:${Math.max(4, ((counts[k] || 0) / max) * 85)}%;animation-delay:${k * 0.1}s;${k === q.correct ? "" : "opacity:.35"}">${shapeSvg(k)}</div>
           </div>`).join("")}
       </div>
     </div>
     <div class="s-answers">
-      ${opts.map((o, k) => `<div class="s-answer opt-${k} ${k === q.correct ? "correct" : "dim"}">${shapeSvg(k)}<span>${esc(o)}</span>
+      ${opts.map((o, k) => `<div class="s-answer opt-${k} ${k === q.correct ? "correct" : "dim"}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span>
         ${k === q.correct ? '<span class="check count">✔</span>' : ""}</div>`).join("")}
     </div>`;
+  if (counts[q.correct] > 0) confetti(70);
+  scheduleAuto();
 }
 
 // ---------------- Tussenstand ----------------
@@ -785,21 +886,41 @@ async function showLeaderboard() {
   const snap = await get(ref(db, `games/${G.code}/scores`));
   G.scores = snap.val() || {};
   G.busy = false;
+  const qkey = G.state.qkey;
+  // Stand vóór deze vraag, om stijgers en dalers te tonen
+  const before = {};
+  for (const [uid, s] of Object.entries(G.scores)) {
+    const gained = s.last?.qkey === qkey ? s.last.points : 0;
+    before[uid] = { ...s, score: s.score - gained };
+  }
+  const prevRank = Object.fromEntries(ranking(before).map((r) => [r.uid, r.rank]));
   const top = ranking(G.scores).slice(0, 5);
   sfx.lobbyMusic();
+  const medal = (n) => ({ 1: "🥇", 2: "🥈", 3: "🥉" }[n] || n);
   $main().innerHTML = `
-    <div class="big-title" style="justify-content:flex-start;padding-top:2vh">
-      <div class="kicker">Tussenstand na vraag ${G.state.index + 1} van ${G.qs.length}</div>
+    <div class="big-title" style="justify-content:flex-start;padding-top:1vh">
+      <div class="kicker">🏆 Tussenstand · na vraag ${G.state.index + 1} van ${G.qs.length}</div>
       <div class="board">
-        ${top.map((r, k) => `
-          <div class="board-row" style="animation-delay:${k * 0.08}s">
-            <span class="rank">${r.rank}</span><span class="name">${esc(r.name)}</span>
+        ${top.map((r, k) => {
+          const d = (prevRank[r.uid] || r.rank) - r.rank;
+          const move = d > 0 ? `<span class="move up">▲ ${d}</span>` : d < 0 ? `<span class="move down">▼ ${-d}</span>` : '<span class="move"></span>';
+          const from = before[r.uid]?.score ?? r.score;
+          return `
+          <div class="board-row ${r.rank === 1 ? "first" : ""}" style="animation-delay:${k * 0.1}s">
+            <span class="rank">${medal(r.rank)}</span><span class="av">${r.avatar || avatarOf(null, r.uid)}</span>
+            <span class="name">${esc(r.name)}</span>
             ${r.streak >= 2 ? `<span class="streak">🔥 ${r.streak}</span>` : ""}
-            <span class="pts">${fmtNum(r.score)}</span>
-          </div>`).join("") || '<p class="muted">Nog geen scores.</p>'}
+            ${move}
+            <span class="pts" data-from="${from}" data-to="${r.score}">${fmtNum(from)}</span>
+          </div>`;
+        }).join("") || '<p class="muted">Nog geen scores.</p>'}
       </div>
     </div>`;
+  $main().querySelectorAll(".pts[data-to]").forEach((el, k) => {
+    setTimeout(() => countUp(el, Number(el.dataset.from), Number(el.dataset.to), 1100), 300 + k * 100);
+  });
   setNext("Volgende vraag ▶", true);
+  scheduleAuto();
 }
 
 // ---------------- Podium ----------------
@@ -812,6 +933,7 @@ async function showPodium() {
   const [p1, p2, p3] = list;
   const step = (p, cls, n) => `
     <div class="step ${cls}" id="step-${n}">
+      <div class="av">${p ? p.avatar || avatarOf(null, p.uid) : ""}</div>
       <div class="who">${p ? esc(p.name) : "–"}</div>
       <div class="pts">${p ? fmtNum(p.score) + " punten" : ""}</div>
       <div class="block">${n}</div>
@@ -820,15 +942,15 @@ async function showPodium() {
     <div class="big-title" style="flex:0;padding-top:1vh"><div class="kicker">🏆 De winnaars 🏆</div></div>
     <div class="podium">${step(p2, "p2", 2)}${step(p1, "p1", 1)}${step(p3, "p3", 3)}</div>
     <div class="estimate-list" id="rest" style="opacity:0;transition:opacity .8s">
-      ${list.slice(3, 10).map((r) => `<span class="pill">${r.rank}. ${esc(r.name)} · ${fmtNum(r.score)}</span>`).join("")}
+      ${list.slice(3, 10).map((r) => `<span class="pill">${r.rank}. ${r.avatar || ""} ${esc(r.name)} · ${fmtNum(r.score)}</span>`).join("")}
     </div>`;
   setNext("", false, false);
   sfx.stopMusic();
   const show = (n) => document.getElementById(`step-${n}`)?.classList.add("show");
   const wait = (ms) => new Promise((res) => setTimeout(res, ms));
-  sfx.drumroll(2.2); await wait(2300); show(3); sfx.reveal();
+  sfx.drumroll(2.2); await wait(2300); show(3); sfx.reveal(); confetti(40);
   await wait(1500);
-  sfx.drumroll(2.2); await wait(2300); show(2); sfx.reveal();
+  sfx.drumroll(2.2); await wait(2300); show(2); sfx.reveal(); confetti(60);
   await wait(1500);
   sfx.drumroll(3.2); await wait(3300); show(1); sfx.fanfare(); confetti(220);
   setTimeout(() => confetti(160), 1200);

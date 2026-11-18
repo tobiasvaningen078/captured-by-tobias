@@ -2,6 +2,35 @@
 
 export const SHAPE_NAMES = ["Ster", "Sneeuwvlok", "Bel", "Kerstboom"];
 
+export const AVATARS = ["🎅", "🤶", "🦌", "⛄", "🧝", "🐧", "🎁", "🍪", "⭐", "🔔", "🎄", "🐻‍❄️"];
+
+/** Avatar van een speler; valt terug op een vaste keuze op basis van het id. */
+export function avatarOf(p, uid = "") {
+  if (p && AVATARS.includes(p.avatar)) return p.avatar;
+  let h = 0;
+  for (const ch of String(uid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATARS[h % AVATARS.length];
+}
+
+/** Een slinger kerstlampjes. */
+export function lightsHtml(n = 18) {
+  return `<div class="lights" aria-hidden="true">${Array.from({ length: n }, (_, i) =>
+    `<span class="bulb c${i % 4}" style="animation-delay:${((i * 0.37) % 1.6).toFixed(2)}s"></span>`).join("")}</div>`;
+}
+
+/** Laat een getal in een element oplopen. */
+export function countUp(el, from, to, ms = 900) {
+  if (!el) return;
+  const t0 = performance.now();
+  const step = (t) => {
+    const f = Math.min(1, (t - t0) / ms);
+    const e = 1 - Math.pow(1 - f, 3);
+    el.textContent = Math.round(from + (to - from) * e).toLocaleString("nl-NL");
+    if (f < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 const SHAPES = [
   // ster
   '<polygon fill="currentColor" points="12,1.8 14.9,8.5 22.2,9.2 16.7,14.1 18.3,21.3 12,17.6 5.7,21.3 7.3,14.1 1.8,9.2 9.1,8.5"/>',
@@ -111,6 +140,7 @@ export function computeResults(q, qkey, answers, players, prev, startedAt, durat
     const points = base * mult + bonus;
     scores[uid] = {
       name: p.name,
+      avatar: avatarOf(p, uid),
       score: (before.score || 0) + points,
       streak,
       last: { qkey, points, bonus, correct, answered: !!a },
