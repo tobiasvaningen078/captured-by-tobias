@@ -672,8 +672,9 @@ function renderLobbyPlayers() {
   for (const [uid, p] of list) {
     if (have.has(uid)) continue;
     const b = document.createElement("button");
-    b.className = "chip"; b.dataset.uid = uid; b.title = "Verwijderen";
     let h = 0; for (const ch of uid) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    // Gasten krijgen om de beurt een metaalkleur, zodat buren verschillen
+    b.className = `chip opt-${(el.querySelectorAll(".chip").length) % 4}`; b.dataset.uid = uid; b.title = "Verwijderen";
     b.style.setProperty("--r", `${((h % 9) - 4) * 0.7}deg`);
     b.innerHTML = `${monogram(p.name)}<span>${esc(p.name)}</span>`;
     b.onclick = async () => {

@@ -257,6 +257,19 @@ select.input option { color: #111; }
   animation: card-drop 750ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
   transition: transform 200ms var(--ease-out), opacity 200ms ease;
 }
+/* Gastenlijst in dezelfde metaalkleuren als de antwoordvakken */
+.chip[class*="opt-"] {
+  font-family: var(--sans); font-weight: 500;
+  background: linear-gradient(135deg, var(--m1) 0%, var(--m2) 38%, var(--m3) 58%, var(--m2) 78%, var(--m1) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 -2px 6px rgba(0,0,0,.12), 0 1vh 2.4vh rgba(0,0,0,.35);
+}
+.chip.opt-0 { color: #3a1d19; } .chip.opt-1 { color: #1b2633; } .chip.opt-2 { color: #2e2310; } .chip.opt-3 { color: #16281b; }
+.chip[class*="opt-"]::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(ellipse 70% 60% at 30% 0%, rgba(255,255,255,.55), transparent 70%);
+}
+.chip > * { position: relative; }
+.chip[class*="opt-"] .monogram { color: var(--ivory); box-shadow: inset 0 0 0 1px rgba(255,255,255,.5), inset 0 0 0 3px var(--ink), inset 0 0 0 4px rgba(255,255,255,.2); }
 @keyframes card-drop { from { opacity: 0; transform: translateY(-6vh) rotate(calc(var(--r) * 4)) scale(.94); } }
 .chip .monogram { font-size: 1.7vh; }
 .chip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
