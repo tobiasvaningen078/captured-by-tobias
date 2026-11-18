@@ -7,7 +7,8 @@ import { firebaseConfig } from "./config.js";
 export * from "./vendor/firebase.js";
 
 const emulator = new URLSearchParams(location.search).has("emu");
-export const configured = emulator || !!(firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith("VUL_"));
+const filled = (v) => !!v && !String(v).includes("VUL_");
+export const configured = emulator || (filled(firebaseConfig.apiKey) && filled(firebaseConfig.databaseURL));
 
 export let auth = null;
 export let db = null;

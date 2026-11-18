@@ -1,13 +1,13 @@
 // ------------------------------------------------------------------
 //  FIREBASE-INSTELLINGEN
-//  Plak hier de gegevens uit je Firebase-project
+//  Gegevens uit het Firebase-project "Kerst quiz"
 //  (Firebase console → Projectinstellingen → Jouw apps → Web-app → Config).
-//  Zie README.md voor de stappen.
+//  Deze waarden zijn niet geheim; de beveiliging zit in database.rules.json.
 // ------------------------------------------------------------------
 export const firebaseConfig = {
-  apiKey: "VUL_HIER_IN",
-  authDomain: "VUL_HIER_IN.firebaseapp.com",
-  databaseURL: "https://VUL_HIER_IN-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "VUL_HIER_IN",
-  appId: "VUL_HIER_IN",
+  apiKey: "AIzaSyBpOvJ6OEobOAUgxtjCXETrzLhqDTlwFLE",
+  authDomain: "kerst-quiz-8c2a4.firebaseapp.com",
+  databaseURL: "VUL_HIER_DE_DATABASE_LINK_IN",
+  projectId: "kerst-quiz-8c2a4",
+  appId: "1:933592069718:web:c4c503bef1e6ba742dedf7",
 };
