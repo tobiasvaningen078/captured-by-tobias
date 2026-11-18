@@ -89,24 +89,48 @@ function playLoop(events, lengthBeats, bpmFn) {
 }
 export function stopMusic() { if (loopTimer) clearInterval(loopTimer); loopTimer = null; }
 
-// Jingle Bells (traditioneel, publiek domein) als belletjesmelodie
-const JINGLE = [
-  ["E5", .5], ["E5", .5], ["E5", 1], ["E5", .5], ["E5", .5], ["E5", 1], ["E5", .5], ["G5", .5], ["C5", .75], ["D5", .25], ["E5", 2],
-  ["F5", .5], ["F5", .5], ["F5", .75], ["F5", .25], ["F5", .5], ["E5", .5], ["E5", .5], ["E5", .25], ["E5", .25],
-  ["E5", .5], ["D5", .5], ["D5", .5], ["E5", .5], ["D5", 1], ["G5", 1],
-  ["E5", .5], ["E5", .5], ["E5", 1], ["E5", .5], ["E5", .5], ["E5", 1], ["E5", .5], ["G5", .5], ["C5", .75], ["D5", .25], ["E5", 2],
-  ["F5", .5], ["F5", .5], ["F5", .5], ["F5", .5], ["F5", .5], ["E5", .5], ["E5", .5], ["E5", .25], ["E5", .25],
-  ["G5", .5], ["G5", .5], ["F5", .5], ["D5", .5], ["C5", 2], [null, 2],
+// Rustige lounge: zachte jazzakkoorden (pad), een warme bas en af en toe een belletje.
+function pad(freq, t, dur, gain = 0.05) {
+  const c = ac(); if (!c) return;
+  const g = c.createGain();
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 1100; lp.Q.value = 0.3;
+  const attack = Math.min(0.9, dur * 0.3);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(gain, t + attack);
+  g.gain.setValueAtTime(gain, t + dur - 0.6);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.6);
+  lp.connect(g); g.connect(master);
+  for (const detune of [-6, 6]) {
+    const o = c.createOscillator();
+    o.type = "triangle"; o.frequency.value = freq; o.detune.value = detune;
+    o.connect(lp); o.start(t); o.stop(t + dur + 0.7);
+  }
+}
+
+// Cmaj9 – Am9 – Dm9 – G13 (twee tellen per akkoord-wissel van de bas)
+const LOUNGE = [
+  { root: "C3", chord: ["E3", "G3", "B3", "D4"], top: ["G4", "B4", "D5"] },
+  { root: "A2", chord: ["G3", "C4", "E4", "B3"], top: ["E5", "C5", "B4"] },
+  { root: "D3", chord: ["F3", "A3", "C4", "E4"], top: ["A4", "C5", "E5"] },
+  { root: "G2", chord: ["F3", "B3", "E4", "A3"], top: ["D5", "B4", "E5"] },
 ];
-const JINGLE_BASS = ["C3", "C3", "C3", "C3", "F2", "C3", "G2", "G2", "C3", "C3", "C3", "C3", "F2", "C3", "G2", "C3", "C3"];
 
 export function lobbyMusic() {
   const ev = [];
-  let at = 0;
-  for (const [n, b] of JINGLE) { if (n) { const f = hz(n); ev.push({ at, play: (t) => bell(f, t, 0.9, 0.12) }); } at += b; }
-  const len = at;
-  JINGLE_BASS.forEach((n, i) => { const f = hz(n); if (i * 2 < len) ev.push({ at: i * 2 + 0.001, play: (t, spb) => bass(f, t, spb * 1.6, 0.12) }); });
-  playLoop(ev, len, () => 132);
+  const barBeats = 4;
+  // Vaste, losse plekken voor de belletjes, zodat het niet mechanisch klinkt
+  const bellSpots = [[1.5, 0], [3, 1]], bellSpots2 = [[0.5, 2], [2.5, 0]];
+  LOUNGE.forEach((bar, i) => {
+    const at = i * barBeats;
+    ev.push({ at: at + 0.0001, play: (t, spb) => bar.chord.forEach((n) => pad(hz(n), t, spb * barBeats, 0.028)) });
+    ev.push({ at: at + 0.0002, play: (t, spb) => tone(hz(bar.root), t, spb * 2.6, { type: "sine", gain: 0.09, attack: 0.04 }) });
+    ev.push({ at: at + 2.5, play: (t, spb) => tone(hz(bar.root) * 1.5, t, spb * 1.2, { type: "sine", gain: 0.05, attack: 0.04 }) });
+    for (const [beat, k] of (i % 2 ? bellSpots2 : bellSpots)) {
+      ev.push({ at: at + beat, play: (t) => bell(hz(bar.top[k]), t, 2.2, 0.035) });
+    }
+  });
+  playLoop(ev, LOUNGE.length * barBeats, () => 72);
 }
 
 let questionTempo = 118;
