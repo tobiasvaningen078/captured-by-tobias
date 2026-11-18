@@ -7,7 +7,7 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyBpOvJ6OEobOAUgxtjCXETrzLhqDTlwFLE",
   authDomain: "kerst-quiz-8c2a4.firebaseapp.com",
-  databaseURL: "VUL_HIER_DE_DATABASE_LINK_IN",
+  databaseURL: "https://kerst-quiz-8c2a4-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "kerst-quiz-8c2a4",
   appId: "1:933592069718:web:c4c503bef1e6ba742dedf7",
 };
