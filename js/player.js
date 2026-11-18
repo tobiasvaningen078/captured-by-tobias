@@ -65,10 +65,22 @@ function showJoin(msg = "") {
       await join(c, n);
     } catch (err) {
       console.error(err);
-      $err.textContent = err.userMessage || "Er ging iets mis. Controleer je internet en probeer opnieuw.";
+      $err.textContent = err.userMessage || explainError(err);
       document.getElementById("joinBtn").disabled = false;
     }
   });
+}
+
+function explainError(err) {
+  const code = String(err.code || err.message || "onbekend");
+  if (/operation-not-allowed|admin-restricted/.test(code)) {
+    return "Anoniem inloggen staat nog uit. Quizmaster: zet 'Anonymous' aan in Firebase → Authentication → Sign-in method. (" + code + ")";
+  }
+  if (/permission.denied|PERMISSION_DENIED/i.test(code)) {
+    return "Geen toegang tot de database. Quizmaster: controleer of de regels uit database.rules.json zijn gepubliceerd. (" + code + ")";
+  }
+  if (/network|unavailable/i.test(code)) return "Geen verbinding. Controleer je internet en probeer opnieuw. (" + code + ")";
+  return "Er ging iets mis: " + code;
 }
 
 async function ensureAuth() {
