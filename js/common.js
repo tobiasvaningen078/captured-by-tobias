@@ -169,13 +169,34 @@ export function ranking(scores) {
 // ------------------------------------------------------------------
 // Sneeuw
 // ------------------------------------------------------------------
+// Goudstof + opstijgende champagnebubbels, plus bruisende uitbarstingen op afroep.
+let burstQueue = [];
+export function bubbleBurst(x, y, n = 40, spread = 60) {
+  for (let i = 0; i < n; i++) {
+    burstQueue.push({
+      x: x + (Math.random() - 0.5) * spread, y: y + (Math.random() - 0.5) * spread * 0.4,
+      r: Math.random() * 4 + 1.5, vy: -(Math.random() * 2.6 + 1.4), vx: (Math.random() - 0.5) * 1.2,
+      phase: Math.random() * 6, life: 0, max: 90 + Math.random() * 70,
+    });
+  }
+}
+/** Bubbels vanuit het midden van een element. */
+export function burstFrom(el, n = 40) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  bubbleBurst(r.left + r.width / 2, r.top + r.height * 0.7, n, r.width * 0.8);
+}
+
 export function startSnow(density = 1) {
-  // Langzaam twinkelend goudstof
   const c = document.getElementById("snow");
   if (!c || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const ctx = c.getContext("2d");
   const dpr = Math.min(devicePixelRatio || 1, 2);
-  let w, h, dust = [];
+  let w, h, dust = [], bubbles = [];
+  const newBubble = (anywhere) => ({
+    x: Math.random() * w, y: anywhere ? Math.random() * h : h + 10,
+    r: Math.random() * 3.2 + 1.2, vy: -(Math.random() * 0.5 + 0.25), phase: Math.random() * 6, wob: Math.random() * 0.6 + 0.2,
+  });
   const resize = () => {
     w = innerWidth; h = innerHeight;
     c.width = w * dpr; c.height = h * dpr; c.style.width = w + "px"; c.style.height = h + "px";
@@ -186,6 +207,14 @@ export function startSnow(density = 1) {
       vy: Math.random() * 0.12 + 0.03, phase: Math.random() * Math.PI * 2, speed: Math.random() * 0.02 + 0.006,
       star: Math.random() < 0.12,
     }));
+    bubbles = Array.from({ length: Math.round(n * 0.45) }, () => newBubble(true));
+  };
+  const drawBubble = (x, y, r, a) => {
+    ctx.strokeStyle = `rgba(241, 221, 170, ${(0.55 * a).toFixed(3)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = `rgba(255, 248, 225, ${(0.7 * a).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, Math.max(0.6, r * 0.28), 0, Math.PI * 2); ctx.fill();
   };
   addEventListener("resize", resize);
   resize();
@@ -204,9 +233,55 @@ export function startSnow(density = 1) {
         ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2); ctx.fill();
       }
     }
+    for (const b of bubbles) {
+      b.phase += 0.03; b.y += b.vy; b.x += Math.sin(b.phase) * b.wob * 0.3;
+      if (b.y < -10) Object.assign(b, newBubble(false));
+      const fade = Math.min(1, b.y / (h * 0.5));
+      drawBubble(b.x, b.y, b.r, 0.25 + 0.5 * fade);
+    }
+    burstQueue = burstQueue.filter((p) => p.life < p.max);
+    for (const p of burstQueue) {
+      p.life++; p.phase += 0.15; p.y += p.vy; p.vy *= 0.995; p.x += p.vx + Math.sin(p.phase) * 0.6; p.vx *= 0.97;
+      drawBubble(p.x, p.y, p.r, 1 - p.life / p.max);
+    }
     requestAnimationFrame(tick);
   };
   tick();
+}
+
+/** Gouden vonkjes vanaf een aantikpunt (telefoon). */
+export function sparkleAt(x, y, n = 10) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement("span");
+    s.className = "spark"; s.textContent = "✦";
+    s.style.left = x + "px"; s.style.top = y + "px";
+    document.body.appendChild(s);
+    const ang = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+    const dist = 40 + Math.random() * 50;
+    s.animate([
+      { transform: "translate(-50%, -50%) scale(.6)", opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist}px)) scale(1) rotate(90deg)`, opacity: 0 },
+    ], { duration: 520 + Math.random() * 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" }).onfinish = () => s.remove();
+  }
+}
+
+/** Het champagneglas (SVG). state: "empty" | "filling" | "full" | "tipped" */
+export function glassSvg(state = "filling") {
+  return `<svg class="glass ${state}" viewBox="0 0 100 120" aria-hidden="true">
+    <defs>
+      <clipPath id="bowl"><path d="M10 22 H90 C88 47 71 61 50 61 C29 61 12 47 10 22 Z"/></clipPath>
+      <linearGradient id="fizz" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6e4b0"/><stop offset="1" stop-color="#c99a3e"/></linearGradient>
+    </defs>
+    <g clip-path="url(#bowl)">
+      <rect class="liquid" x="0" y="22" width="100" height="42" fill="url(#fizz)"/>
+      <circle class="b b1" cx="34" cy="58" r="2"/><circle class="b b2" cx="52" cy="60" r="1.6"/>
+      <circle class="b b3" cx="66" cy="57" r="2.2"/><circle class="b b4" cx="44" cy="59" r="1.3"/>
+    </g>
+    <path d="M10 22 H90 C88 47 71 61 50 61 C29 61 12 47 10 22 Z" fill="none" stroke="#f1ddaa" stroke-width="2"/>
+    <path d="M50 61 V100" stroke="#f1ddaa" stroke-width="2.4"/>
+    <ellipse cx="50" cy="103" rx="20" ry="4.5" fill="none" stroke="#f1ddaa" stroke-width="2"/>
+  </svg>`;
 }
 
 // ------------------------------------------------------------------

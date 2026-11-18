@@ -171,3 +171,22 @@ export function fanfare() {
   }
   ["C3", "G3", "C4"].forEach((n) => tone(hz(n), t + 1.45, 2, { type: "triangle", gain: 0.1 }));
 }
+
+/** Kurk die van de fles knalt, met een beetje gebruis erna. */
+export function pop() {
+  const c = ac(); if (!c) return; const t = c.currentTime;
+  const o = c.createOscillator(); const g = c.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.09);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.15);
+  noise(t, 0.05, 0.18, 2500);
+  for (let i = 0; i < 14; i++) noise(t + 0.12 + i * 0.045 + Math.random() * 0.03, 0.03, 0.025 * (1 - i / 14), 6000);
+}
+
+/** Twee glazen die klinken. */
+export function clink() {
+  const c = ac(); if (!c) return; const t = c.currentTime;
+  for (const [f, d] of [[2637, 0], [3136, 0.012], [2650, 0.11], [3160, 0.122]]) {
+    tone(f, t + d, 1.1, { type: "sine", gain: 0.05, attack: 0.002, partials: [[1, 1], [2.76, 0.25]] });
+  }
+}

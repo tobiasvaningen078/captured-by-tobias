@@ -241,16 +241,23 @@ select.input option { color: #111; }
 .lobby .players { display: flex; flex-direction: column; min-height: 0; height: 100%; padding: 2vh 0; }
 .lobby .players h2 { font-size: 5vh; color: var(--gold-light); display: flex; align-items: baseline; gap: .5em; margin-bottom: 1.4vh; }
 .count-badge { font-family: var(--sans); font-size: .45em; color: var(--muted); font-weight: 400; letter-spacing: .04em; }
-.chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(17vw, 1fr)); gap: 1.4vh 2vw; align-content: start; overflow: hidden; padding-top: 1.6vh; border-top: 1px solid var(--hair-soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 2.4vh 1.6vw; align-content: flex-start; overflow: hidden; padding: 2.4vh .6vw; }
 .chip {
-  display: flex; align-items: center; gap: .7em; background: none; border: 0; padding: .2em 0; text-align: left;
-  font-family: var(--sans); font-size: 2.7vh; color: var(--ivory); cursor: pointer; min-width: 0;
-  animation: enter-soft 500ms var(--ease-out) both; transition: color 160ms ease, opacity 160ms ease;
+  --r: 0deg;
+  position: relative; display: inline-flex; align-items: center; gap: .7em; max-width: 22vw; text-align: left; cursor: pointer;
+  padding: 1.3vh 1.6vw 1.3vh .9vw; border: 0; border-radius: 3px;
+  font-family: var(--serif); font-size: 2.7vh; color: #1c1a14;
+  background: linear-gradient(180deg, #fbf6ea, #ece0c4);
+  box-shadow: inset 0 0 0 1px var(--gold-deep), inset 0 0 0 4px #fbf6ea, inset 0 0 0 5px rgba(156,122,60,.4), 0 1vh 2.4vh rgba(0,0,0,.35);
+  transform: rotate(var(--r));
+  animation: card-drop 750ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: transform 200ms var(--ease-out), opacity 200ms ease;
 }
-.chip .monogram { font-size: 1.9vh; }
+@keyframes card-drop { from { opacity: 0; transform: translateY(-6vh) rotate(calc(var(--r) * 4)) scale(.94); } }
+.chip .monogram { font-size: 1.7vh; }
 .chip span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (hover: hover) and (pointer: fine) { .chip:hover { color: #f0a0a8; text-decoration: line-through; } }
-.waiting { font-family: var(--serif); font-style: italic; font-size: 3vh; color: var(--muted); grid-column: 1 / -1; }
+@media (hover: hover) and (pointer: fine) { .chip:hover { transform: rotate(0deg) scale(1.03); } .chip:hover span:last-child { text-decoration: line-through; text-decoration-color: var(--ruby); } }
+.waiting { font-family: var(--serif); font-style: italic; font-size: 3vh; color: var(--muted); }
 
 /* Titel / intro */
 .big-title { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2.4vh; }
@@ -324,7 +331,7 @@ select.input option { color: #111; }
   display: flex; align-items: baseline; gap: 1.4vw; padding: 1.5vh 0; font-size: 3.4vh;
   animation: enter-soft 500ms var(--ease-out) both;
 }
-.board-row + .board-row { border-top: 1px solid var(--hair-soft); }
+.board-row { position: relative; will-change: transform; }
 .board-row .rank { width: 3.4vw; font-family: var(--serif); font-style: italic; color: var(--gold); text-align: left; }
 .board-row .monogram { font-size: 1.8vh; align-self: center; }
 .board-row .name { font-family: var(--serif); font-size: 1.1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
@@ -402,10 +409,76 @@ label.correct { display: flex; align-items: center; gap: .35em; font-size: .9em;
   .q-item .acts { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
+/* ================= SPEELS: champagne & goud ================= */
+/* Bladgoud-glans over titels */
+.foil {
+  background: linear-gradient(100deg, #b48a3e 0%, #f1ddaa 35%, #fff8e2 47%, #f1ddaa 58%, #c99a3e 80%, #f1ddaa 100%);
+  background-size: 260% 100%; background-position: 100% 0;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: foil 2.2s 200ms var(--ease-out) both;
+}
+@keyframes foil { to { background-position: 0% 0; } }
+
+/* Geslepen edelstenen: facetten over de antwoordvakken */
+.s-answer::before, .p-answer::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.22) 0 18%, transparent 18% 100%),
+    linear-gradient(245deg, rgba(255,255,255,.1) 0 22%, transparent 22% 100%),
+    linear-gradient(15deg, rgba(0,0,0,.18) 0 14%, transparent 14% 100%),
+    conic-gradient(from 200deg at 72% 28%, rgba(255,255,255,.14), transparent 22%, rgba(255,255,255,.06) 48%, transparent 70%, rgba(0,0,0,.12) 88%, transparent);
+  mix-blend-mode: soft-light;
+}
+.s-answer > *, .p-answer > * { position: relative; }
+/* Een twinkeling op elke steen */
+.gem-glint { position: absolute; top: 14%; right: 6%; font-size: 2.4vh; color: #fff8e2; opacity: 0; animation: glint 4s ease-in-out infinite; pointer-events: none; }
+.p-answer .gem-glint { font-size: .9em; }
+.s-answer:nth-child(2) .gem-glint, .p-answer:nth-child(2) .gem-glint { animation-delay: 1.1s; }
+.s-answer:nth-child(3) .gem-glint, .p-answer:nth-child(3) .gem-glint { animation-delay: 2.3s; }
+.s-answer:nth-child(4) .gem-glint, .p-answer:nth-child(4) .gem-glint { animation-delay: 3.1s; }
+@keyframes glint { 0%, 70%, 100% { opacity: 0; transform: scale(.6) rotate(0deg); } 80% { opacity: 1; transform: scale(1.1) rotate(45deg); } 90% { opacity: 0; transform: scale(.7) rotate(90deg); } }
+
+/* Gouden kroon voor de winnaar */
+.crown { display: block; width: 9vh; height: auto; margin: 0 auto -1.2vh; filter: drop-shadow(0 .6vh 1.2vh rgba(0,0,0,.45)); opacity: 0; transform: translateY(-14vh) rotate(-12deg); }
+.crown.on { animation: crown-drop 900ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+@keyframes crown-drop { to { opacity: 1; transform: translateY(0) rotate(-6deg); } }
+
+/* Vonkjes bij aantikken */
+.spark { position: fixed; z-index: 60; pointer-events: none; color: var(--gold-light); font-size: 14px; text-shadow: 0 0 6px rgba(241,221,170,.8); }
+
+/* Champagneglas op de telefoon */
+.glass { width: 34%; max-width: 150px; display: block; margin: 0 auto; overflow: visible; }
+.glass .liquid { transform-box: fill-box; transform-origin: bottom; transform: translateY(100%); transition: transform 1.6s var(--ease-out); }
+.glass.filling .liquid { animation: fill-glass 6s var(--ease-out) forwards; }
+.glass.full .liquid { animation: fill-full 1.3s 150ms var(--ease-out) both; }
+@keyframes fill-full { from { transform: translateY(100%); } to { transform: translateY(14%); } }
+.glass.tipped { transform: rotate(-24deg); transform-origin: 50% 90%; animation: tip 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.glass.tipped .liquid { transform: translateY(78%); }
+@keyframes fill-glass { from { transform: translateY(100%); } to { transform: translateY(30%); } }
+@keyframes tip { from { transform: rotate(0deg); } }
+.glass .b { fill: #fff8e2; opacity: 0; }
+.glass.filling .b, .glass.full .b { animation: glass-bubble 1.8s ease-in infinite; }
+.glass .b2 { animation-delay: .5s !important; } .glass .b3 { animation-delay: .9s !important; } .glass .b4 { animation-delay: 1.3s !important; }
+@keyframes glass-bubble { 0% { opacity: 0; transform: translateY(0); } 20% { opacity: .9; } 100% { opacity: 0; transform: translateY(-30px); } }
+.glass-wrap { position: relative; padding-top: .4em; }
+.toast-line { font-family: var(--serif); font-style: italic; color: var(--gold-light); text-align: center; font-size: 1.15em; margin: .2em 0 0; }
+
+/* Speels tussenstand-detail */
+.board-row .glasses { font-size: 2.4vh; letter-spacing: -.2em; white-space: nowrap; }
+.board-row.climber .name { color: var(--gold-light); }
+
 /* Minder beweging: alleen vervagen, geen verplaatsing */
 @media (prefers-reduced-motion: reduce) {
   .enter, .enter-soft, .p-answer, .result-box, .invite, .chip, .q-text, .q-image img, .s-answer, .board-row, .numeral, .modal { animation-name: fade !important; animation-delay: 0ms !important; }
   .dist .bar { animation: none; }
   .s-answer.correct::after, .waiting-mark { animation: none; }
   .podium .step { transform: none; }
+  .chip { animation-name: fade !important; }
+  .foil { animation: none; background-position: 40% 0; }
+  .gem-glint { display: none; }
+  .crown { opacity: 1; transform: none; }
+  .crown.on { animation: none; }
+  .glass.filling .liquid { animation: none; transform: translateY(30%); }
+  .glass.full .liquid { animation: none; transform: translateY(14%); }
+  .glass .b { animation: none !important; }
 }

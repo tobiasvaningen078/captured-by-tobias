@@ -5,7 +5,7 @@ import {
 } from "./firebase.js";
 import {
   shapeSvg, esc, optionsFor, computeResults, ranking, startSnow, confetti, resizeImage, fmtNum, TYPE_LABELS,
-  avatarOf, lightsHtml, countUp, monogram,
+  avatarOf, lightsHtml, countUp, monogram, bubbleBurst, burstFrom,
 } from "./common.js";
 import * as sfx from "./sound.js";
 import { SAMPLE_QUESTIONS } from "./samples.js";
@@ -502,7 +502,7 @@ function enterStage(code, g) {
     G.players = s.val() || {};
     const n = Object.keys(G.players).length;
     document.getElementById("pCount").textContent = `${n} ${n === 1 ? "speler" : "spelers"}`;
-    if (G.state.phase === "lobby") { renderLobbyPlayers(); if (n > before) sfx.joinBlip(); }
+    if (G.state.phase === "lobby") { renderLobbyPlayers(); if (n > before) sfx.clink(); }
     updateNextBtn();
   }));
   G.unsubs.push(onValue(ref(db, `${base}/scores`), (s) => { G.scores = s.val() || {}; }));
@@ -648,7 +648,7 @@ function showLobby() {
         </div>
       </div>
       <div class="players">
-        <h2>Gastenlijst <span class="count-badge" id="pNum">0</span></h2>
+        <h2><span class="foil">Gastenlijst</span> <span class="count-badge" id="pNum">0</span></h2>
         <div class="chips" id="chips"></div>
         <p class="muted" style="margin-top:auto;font-size:2vh">Klik op een naam om iemand te verwijderen.</p>
       </div>
@@ -673,6 +673,8 @@ function renderLobbyPlayers() {
     if (have.has(uid)) continue;
     const b = document.createElement("button");
     b.className = "chip"; b.dataset.uid = uid; b.title = "Verwijderen";
+    let h = 0; for (const ch of uid) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    b.style.setProperty("--r", `${((h % 9) - 4) * 0.7}deg`);
     b.innerHTML = `${monogram(p.name)}<span>${esc(p.name)}</span>`;
     b.onclick = async () => {
       if (confirm(`${p.name} verwijderen?`)) {
@@ -680,6 +682,7 @@ function renderLobbyPlayers() {
       }
     };
     el.appendChild(b);
+    if (have.size || list.length === 1) setTimeout(() => burstFrom(b, 14), 350);
   }
   if (!list.length) el.innerHTML = `<div class="waiting">Wachten op de eerste gast…</div>`;
 }
@@ -700,12 +703,12 @@ async function startGameplay() {
 async function startIntro(i) {
   G.busy = true;
   sfx.stopMusic();
-  sfx.whoosh();
+  sfx.clink();
   const q = G.qs[i];
   await setState({ phase: "intro", index: i, total: G.qs.length, qkey: `q${i}` });
   $main().innerHTML = `
     <div class="big-title">
-      <div class="numeral">${i + 1}</div>
+      <div class="numeral"><span class="foil">${i + 1}</span></div>
       <div class="numeral-of">van ${G.qs.length}</div>
       <div class="rule" style="width:min(28vw,420px)"><span>✦</span></div>
       <div class="sub enter-soft" style="animation-delay:200ms">${q.double ? '<span class="badge-double">Dubbele punten</span>' : esc(TYPE_LABELS[q.type])}</div>
@@ -755,7 +758,7 @@ function showQuestion(resumed) {
     </div>
     ${q.type === "estimate"
       ? `<div class="estimate-box frame enter">Schatvraag: typ je antwoord op je telefoon${q.unit ? ` (in ${esc(q.unit)})` : ""}</div>`
-      : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span></div>`).join("")}</div>`}`;
+      : `<div class="s-answers">${opts.map((o, k) => `<div class="s-answer opt-${k}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span><span class="gem-glint">✦</span></div>`).join("")}</div>`}`;
   setNext("Toon antwoord", true);
 
   if (G.answerUnsub) G.answerUnsub();
@@ -836,7 +839,8 @@ function renderReveal() {
   const i = G.state.index;
   const q = G.qs[i];
   const r = G.reveal || {};
-  sfx.reveal();
+  sfx.pop();
+  setTimeout(() => sfx.reveal(), 180);
   const last = i >= G.qs.length - 1;
   setNext(last ? "Naar de uitslag" : "Tussenstand", true);
   if (q.type === "estimate") {
@@ -851,6 +855,7 @@ function renderReveal() {
           : `<div class="sub">Niemand heeft een schatting gegeven.</div>`}
         <div class="sub">${r.answered || 0} van ${playerCount()} spelers antwoordden</div>
       </div>`;
+    setTimeout(() => burstFrom($main().querySelector(".estimate-box"), 60), 150);
     scheduleAuto();
     return;
   }
@@ -872,6 +877,7 @@ function renderReveal() {
       ${opts.map((o, k) => `<div class="s-answer opt-${k} ${k === q.correct ? "correct" : "dim"}"><span class="badge">${shapeSvg(k)}</span><span>${esc(o)}</span>
         ${k === q.correct ? '<span class="check count">✔</span>' : ""}</div>`).join("")}
     </div>`;
+  setTimeout(() => burstFrom($main().querySelector(".s-answer.correct"), 70), 150);
   scheduleAuto();
 }
 
@@ -891,33 +897,59 @@ async function showLeaderboard() {
   }
   const prevRank = Object.fromEntries(ranking(before).map((r) => [r.uid, r.rank]));
   const top = ranking(G.scores).slice(0, 5);
+  // Eerst tonen in de oude volgorde, dan naar de nieuwe plek schuiven
+  const startOrder = [...top].sort((x, y) => (prevRank[x.uid] || 99) - (prevRank[y.uid] || 99) || x.rank - y.rank);
   sfx.lobbyMusic();
   $main().innerHTML = `
     <div class="big-title" style="justify-content:center">
       <div class="board frame">
         <div class="center" style="margin-bottom:2vh">
-          <div style="font-family:var(--serif);font-size:4.4vh;color:var(--gold-light)">Tussenstand</div>
+          <div style="font-family:var(--serif);font-size:4.4vh"><span class="foil">Tussenstand</span></div>
           <div class="script" style="font-size:2.6vh;color:var(--muted)">na vraag ${G.state.index + 1} van ${G.qs.length}</div>
         </div>
-        ${top.map((r, k) => {
+        <div class="rows" id="rows">
+        ${startOrder.map((r, k) => {
           const d = (prevRank[r.uid] || r.rank) - r.rank;
           const move = d > 0 ? `<span class="move up">▲ ${d}</span>` : d < 0 ? `<span class="move down">▼ ${-d}</span>` : '<span class="move"></span>';
           const from = before[r.uid]?.score ?? r.score;
           return `
-          <div class="board-row ${r.rank === 1 ? "first" : ""}" style="animation-delay:${[0, 70, 125, 165, 195][k]}ms">
-            <span class="rank">${r.rank}</span>${monogram(r.name)}
+          <div class="board-row ${d > 0 ? "climber" : ""}" data-uid="${r.uid}" style="animation-delay:${[0, 70, 125, 165, 195][k]}ms">
+            <span class="rank">${prevRank[r.uid] || r.rank}</span>${monogram(r.name)}
             <span class="name">${esc(r.name)}</span>
             <span class="leader"></span>
-            ${r.streak >= 2 ? `<span class="streak">${r.streak} op rij</span>` : ""}
+            ${r.streak >= 2 ? `<span class="glasses" title="${r.streak} keer op rij goed">${"🥂".repeat(Math.min(r.streak, 5))}</span>` : ""}
             ${move}
             <span class="pts" data-from="${from}" data-to="${r.score}">${fmtNum(from)}</span>
           </div>`;
         }).join("") || '<p class="muted">Nog geen scores.</p>'}
+        </div>
       </div>
     </div>`;
-  $main().querySelectorAll(".pts[data-to]").forEach((el, k) => {
-    setTimeout(() => countUp(el, Number(el.dataset.from), Number(el.dataset.to), 1100), 300 + k * 100);
+  const rowsEl = document.getElementById("rows");
+  const rowEls = [...rowsEl.querySelectorAll(".board-row")];
+  const slotTop = rowEls.map((el) => el.offsetTop);
+  // Punten tellen op…
+  rowEls.forEach((el, k) => {
+    const pts = el.querySelector(".pts");
+    setTimeout(() => countUp(pts, Number(pts.dataset.from), Number(pts.dataset.to), 1000), 350 + k * 60);
   });
+  // …en daarna schuift iedereen naar zijn nieuwe plek
+  setTimeout(() => {
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let moved = false;
+    rowEls.forEach((el, oldIdx) => {
+      const newIdx = top.findIndex((r) => r.uid === el.dataset.uid);
+      const r = top[newIdx];
+      el.querySelector(".rank").textContent = r.rank;
+      el.classList.toggle("first", r.rank === 1);
+      if (newIdx === oldIdx) return;
+      moved = true;
+      el.style.transition = reduce ? "none" : "transform 800ms cubic-bezier(0.77, 0, 0.175, 1)";
+      el.style.transform = `translateY(${slotTop[newIdx] - slotTop[oldIdx]}px)`;
+      if (newIdx < oldIdx) el.style.zIndex = 2;
+    });
+    if (moved) sfx.whoosh();
+  }, 1500);
   setNext("Volgende vraag", true);
   scheduleAuto();
 }
@@ -932,13 +964,14 @@ async function showPodium() {
   const [p1, p2, p3] = list;
   const step = (p, cls, n) => `
     <div class="step ${cls}" id="step-${n}">
+      ${n === 1 ? `<svg class="crown" id="crown" viewBox="0 0 64 44" aria-hidden="true"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".5" stop-color="#e2bd6a"/><stop offset="1" stop-color="#9c7a3c"/></linearGradient></defs><path d="M4 38 L8 12 L20 24 L32 4 L44 24 L56 12 L60 38 Z" fill="url(#cg)" stroke="#6b5226" stroke-width="1.2" stroke-linejoin="round"/><rect x="4" y="36" width="56" height="6" rx="1.5" fill="url(#cg)" stroke="#6b5226" stroke-width="1.2"/><circle cx="32" cy="4" r="3" fill="#b4283c"/><circle cx="8" cy="12" r="2.4" fill="#2c5aa8"/><circle cx="56" cy="12" r="2.4" fill="#1f7f56"/></svg>` : ""}
       <div class="av">${p ? monogram(p.name) : ""}</div>
       <div class="who">${p ? esc(p.name) : "–"}</div>
       <div class="pts">${p ? fmtNum(p.score) + " punten" : ""}</div>
       <div class="block">${n}</div>
     </div>`;
   $main().innerHTML = `
-    <div class="podium-title enter-soft">En de winnaars zijn</div>
+    <div class="podium-title enter-soft"><span class="foil">En de winnaars zijn</span></div>
     <div class="podium" id="podium">${step(p2, "p2", 2)}${step(p1, "p1", 1)}${step(p3, "p3", 3)}</div>
     <div class="estimate-list" id="rest" style="opacity:0;transition:opacity .8s">
       ${list.slice(3, 10).map((r) => `<span class="pill">${r.rank}. ${esc(r.name)}, ${fmtNum(r.score)}</span>`).join("")}
@@ -953,7 +986,11 @@ async function showPodium() {
   await wait(1500);
   sfx.drumroll(3.2); await wait(3300);
   document.getElementById("podium")?.classList.add("lit");
-  show(1); sfx.fanfare(); confetti(220);
+  show(1); sfx.pop(); setTimeout(() => sfx.fanfare(), 250); confetti(220);
+  setTimeout(() => document.getElementById("crown")?.classList.add("on"), 500);
+  setTimeout(() => burstFrom(document.querySelector("#step-1 .block"), 120), 200);
+  setTimeout(() => bubbleBurst(innerWidth * 0.2, innerHeight, 60, 200), 900);
+  setTimeout(() => bubbleBurst(innerWidth * 0.8, innerHeight, 60, 200), 1200);
   setTimeout(() => confetti(160), 1200);
   setTimeout(() => confetti(160), 2600);
   const rest = document.getElementById("rest");

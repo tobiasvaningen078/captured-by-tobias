@@ -13,7 +13,7 @@ Een pubquiz voor de kerstborrel van het werk. De vragen staan op het grote scher
 - Bij een schatvraag krijgt wie er het dichtst bij zit 1000 punten. De rest krijgt minder, naar hoe ver ze ernaast zitten
 - Na elke vraag zie je de verdeling van de antwoorden en de tussenstand (met wie er stijgt ▲ of daalt ▼). De quiz gaat na 10 seconden vanzelf verder; je kunt pauzeren (knop Pauze of toets P), zelf doorklikken, of het automatisch doorgaan bij Instellingen aanpassen of uitzetten
 - Stijl "kerstgala": fluweelgroen, champagnegoud en ivoor, een gouden uitnodigingskaart, een gastenlijst met monogrammen, een tussenstand als menukaart en een podium met spotlight
-- Sfeer met goudglitter, muziek en geluidseffecten (in de browser gemaakt, geen bestanden nodig) en aan het eind een podium met tromgeroffel en confetti
+- Champagnesfeer: opstijgende bubbels, een kurkenknal bij het goede antwoord, klinkende glazen, tafelkaartjes die op hun plek vallen, een tussenstand waarin spelers live langs elkaar schuiven, een kroon voor de winnaar en op de telefoon een glas dat volloopt (of omvalt). Verder goudglitter, rustige lounge-muziek en geluidseffecten (in de browser gemaakt, geen bestanden nodig) en aan het eind een podium met tromgeroffel en confetti
 - Bewerkscherm voor vragen, foto's, volgorde, bedrijfsnaam en logo
 - Beveiligd: alleen jij kunt inloggen als quizmaster. Spelers kunnen de vragen en antwoorden niet vooraf inzien, ook niet met technische trucjes
 

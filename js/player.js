@@ -3,7 +3,7 @@ import {
   configured, auth, db, ref, get, set, onValue, serverTimestamp, signInAnonymously, onAuthStateChanged, serverNow,
 } from "./firebase.js";
 import {
-  shapeSvg, esc, optionsFor, ranking, startSnow, confetti, fmtNum, avatarOf, countUp, monogram,
+  shapeSvg, esc, optionsFor, ranking, startSnow, confetti, fmtNum, avatarOf, countUp, monogram, sparkleAt, glassSvg, burstFrom,
 } from "./common.js";
 
 const $screen = document.getElementById("screen");
@@ -43,7 +43,7 @@ function showJoin(msg = "") {
   const name = saved?.name || "";
   render(`
     <form id="joinForm" class="frame join-card enter" autocomplete="off">
-      <h2>Doe mee</h2>
+      <h2><span class="foil">Doe mee</span></h2>
       <p class="lead">Vul de code van het grote scherm in en je naam.</p>
       <div class="field">
         <label for="code">Spelcode</label>
@@ -144,7 +144,7 @@ function listen() {
 
 function renderBrand() {
   const logo = settings.logo ? `<img src="${esc(settings.logo)}" alt="">` : "";
-  $brand.innerHTML = `${logo}<span class="title">${esc(settings.title || "Kerstquiz")}</span>`;
+  $brand.innerHTML = `${logo}<span class="title foil">${esc(settings.title || "Kerstquiz")}</span>`;
   document.title = `${settings.title || "Kerstquiz"} – Meedoen`;
 }
 
@@ -171,7 +171,7 @@ function update() {
     render(`${topbar()}
       <div class="center enter" style="font-size:2.4em">${monogram(myName)}</div>
       <div class="status-big enter">Je staat op de gastenlijst</div>
-      <p class="center muted">Kijk of je naam op het grote scherm staat. De quiz begint zo.</p>`);
+      <p class="center muted">Zoek je tafelkaartje op het grote scherm. De quiz begint zo.</p>`);
   } else if (phase === "intro") {
     render(`${topbar()}
       <div class="status-emoji enter">✦</div>
@@ -210,14 +210,18 @@ function showQuestion() {
       e.preventDefault();
       const v = Number(String($est.value).replace(",", "."));
       if (!isFinite(v) || $est.value === "") return;
+      const r = e.submitter?.getBoundingClientRect();
+      if (r) sparkleAt(r.left + r.width / 2, r.top + r.height / 2, 12);
       sendAnswer(v);
     });
   } else {
     render(`${head}
       <div class="p-answers ${opts.length === 2 ? "two" : ""}">
-        ${opts.map((o, i) => `<button class="p-answer opt-${i}" data-i="${i}">${shapeSvg(i)}<span>${esc(o)}</span></button>`).join("")}
+        ${opts.map((o, i) => `<button class="p-answer opt-${i}" data-i="${i}">${shapeSvg(i)}<span>${esc(o)}</span><span class="gem-glint">✦</span></button>`).join("")}
       </div>`);
-    $screen.querySelectorAll(".p-answer").forEach((b) => b.addEventListener("click", () => {
+    $screen.querySelectorAll(".p-answer").forEach((b) => b.addEventListener("click", (e) => {
+      const r = b.getBoundingClientRect();
+      sparkleAt(e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2, 12);
       $screen.querySelectorAll(".p-answer").forEach((x) => { x.disabled = true; x.classList.add(x === b ? "chosen" : "faded"); });
       setTimeout(() => sendAnswer(Number(b.dataset.i)), 250);
     }));
@@ -247,16 +251,16 @@ async function sendAnswer(v) {
 }
 
 function showWaiting() {
-  const lines = ["Even wachten op de rest.", "Spannend.", "De anderen denken nog na."];
+  const lines = ["Even de glazen bijvullen…", "De rest denkt nog na.", "Spannend hè?", "Ondertussen: proost!"];
   render(`${topbar()}
-    <div class="waiting-mark">✦</div>
+    <div class="glass-wrap">${glassSvg("filling")}</div>
     <div class="status-big enter">Antwoord verstuurd</div>
     <p class="center muted">${lines[Math.floor(Math.random() * lines.length)]}</p>`);
 }
 
 function showTooLate() {
   render(`${topbar()}
-    <div class="status-emoji">✦</div>
+    <div class="glass-wrap">${glassSvg("empty")}</div>
     <div class="status-big enter">De tijd is om</div>
     <p class="center muted">Kijk op het grote scherm voor het antwoord.</p>`);
 }
@@ -266,21 +270,25 @@ function showResult() {
   const last = s.last && s.last.qkey === state.qkey ? s.last : null;
   const rank = myRank();
   const total = Object.keys(scores).length;
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   let box;
   if (!last || !last.answered) {
-    box = `<div class="result-box neutral frame"><div class="status-big">Geen antwoord</div>
-      <p>De volgende keer sneller.</p></div>`;
+    box = `<div class="glass-wrap">${glassSvg("empty")}</div>
+      <div class="result-box neutral frame"><div class="status-big">${pick(["Te laat voor de toost", "Geen antwoord"])}</div>
+      <p>${pick(["De volgende keer sneller.", "Wakker blijven hè!"])}</p></div>`;
   } else if (last.correct) {
-    const cheers = ["Goed", "Helemaal goed", "Prachtig", "Goed gezien"];
-    box = `<div class="result-box ok frame"><div class="status-big">${cheers[Math.floor(Math.random() * cheers.length)]}</div>
+    box = `<div class="glass-wrap">${glassSvg("full")}</div>
+      <div class="result-box ok frame"><div class="status-big"><span class="foil">${pick(["Proost!", "Chapeau!", "Bravo!", "Op jou!", "Helemaal goed!"])}</span></div>
       <div class="points">+<span id="ptsUp">0</span></div>
-      ${s.streak >= 2 ? `<p>${s.streak} keer op rij goed${last.bonus ? `, +${last.bonus} bonus` : ""}</p>` : ""}</div>`;
+      ${s.streak >= 2 ? `<p>${"🥂".repeat(Math.min(s.streak, 5))} ${s.streak} keer op rij${last.bonus ? `, +${last.bonus} bonus` : ""}</p>` : ""}</div>`;
   } else if (last.points > 0) {
-    box = `<div class="result-box neutral frame"><div class="status-big">Bijna</div>
+    box = `<div class="glass-wrap">${glassSvg("full")}</div>
+      <div class="result-box neutral frame"><div class="status-big">${pick(["Bijna!", "Dichtbij!", "Net niet!"])}</div>
       <div class="points">+<span id="ptsUp">0</span></div></div>`;
   } else {
-    box = `<div class="result-box bad frame"><div class="status-big">Helaas, fout</div>
-      <p>De volgende is voor jou.</p></div>`;
+    box = `<div class="glass-wrap">${glassSvg("tipped")}</div>
+      <div class="result-box bad frame"><div class="status-big">${pick(["Helaas pindakaas", "Oeps, fout", "Mis!"])}</div>
+      <p>${pick(["De volgende is voor jou.", "Kop op, glas omhoog.", "Niet getreurd."])}</p></div>`;
   }
   render(`${topbar()}${box}
     ${rank ? `<p class="rank-big">Je staat op plek <b>${rank}</b> <span class="muted">van ${total}</span></p>` : ""}`);
@@ -288,21 +296,22 @@ function showResult() {
   const pill = document.getElementById("scorePill");
   if (pill && shownScore !== s.score) countUp(pill, shownScore, s.score, 1000);
   shownScore = s.score;
+  if (last?.points > 0) setTimeout(() => burstFrom($screen.querySelector(".glass-wrap"), last.correct ? 45 : 20), 200);
   if (last?.correct && navigator.vibrate) navigator.vibrate([40, 60, 40]);
 }
 
 function showFinal() {
   const rank = myRank();
   const s = myScore();
-  const msg = rank === 1 ? "Je hebt gewonnen" : rank <= 3 ? "Je staat op het podium" : "Bedankt voor het meespelen";
+  const msg = rank === 1 ? "Je hebt gewonnen!" : rank <= 3 ? "Je staat op het podium!" : "Bedankt voor het meespelen";
   render(`${topbar()}
     <div class="frame result-box ${rank === 1 ? "ok" : "neutral"}">
       <div class="center" style="font-size:2.6em;margin-bottom:.4em">${monogram(myName)}</div>
-      <div class="status-big">${msg}</div>
+      <div class="status-big"><span class="${rank <= 3 ? "foil" : ""}">${msg}</span></div>
       <p class="rank-big" style="margin-top:.6em">Plek <b>${rank ?? "–"}</b> met <b>${fmtNum(s.score)}</b> punten</p>
     </div>
     <p class="center muted script" style="font-size:1.3em">Fijne feestdagen</p>`);
-  if (state.phase === "podium" && rank && rank <= 3) setTimeout(() => confetti(140), 600);
+  if (state.phase === "podium" && rank && rank <= 3) setTimeout(() => { confetti(140); burstFrom($screen.querySelector(".result-box"), 60); }, 600);
 }
 
 // ------------------------------------------------------------------
