@@ -235,7 +235,27 @@ select.input option { color: #111; }
 /* Lobby: uitnodiging + gastenlijst */
 .lobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 4vw; flex: 1; min-height: 0; align-items: center; }
 .invite { padding: 5vh 3vw 4vh; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.6vh; animation: enter 800ms var(--ease-out) both; }
-.invite .script { font-size: 3.4vh; }
+/* Uitnodigingskaart in champagnemetaal, rond afgewerkt (zelfde stijl als de knoppen) */
+.frame.ivory.invite {
+  --m1: #f7ebcb; --m2: #dfc690; --m3: #bd9f60;
+  border: 0; border-radius: 44px; color: #2e2310;
+  background:
+    radial-gradient(ellipse 80% 45% at 30% 0%, rgba(255,255,255,.55), transparent 70%),
+    linear-gradient(135deg, var(--m1) 0%, var(--m2) 38%, var(--m3) 58%, var(--m2) 78%, var(--m1) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), inset 0 -3px 10px rgba(0,0,0,.12), 0 24px 60px rgba(0,0,0,.45);
+}
+.frame.ivory.invite::after {
+  content: ""; position: absolute; inset: 12px; border-radius: 34px; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(90, 66, 24, .35), 0 1px 0 rgba(255,255,255,.4);
+}
+.frame.ivory.invite::before { color: #7a5c26; transform: translate(-50%, 90%); }
+.invite > * { position: relative; z-index: 1; }
+.invite .script { font-size: 3.4vh; color: #7a5c26 !important; }
+.invite .event { color: #2a1f0c; }
+.invite .how { color: #5a4724; }
+.invite .url { color: #7a3a32; }
+.invite .qr { border-radius: 22px; padding: 1.6vh; box-shadow: inset 0 0 0 1px rgba(90,66,24,.25), 0 .8vh 2vh rgba(60,40,10,.25); }
+.lobby .invite .code { color: #2a1f0c; }
 .invite .event { font-family: var(--serif); font-size: 6.4vh; font-weight: 500; line-height: 1; color: #1c1a14; }
 .invite .how { font-size: 2.1vh; color: #5d584a; letter-spacing: .02em; }
 .invite .url { font-family: var(--sans); font-size: 2.4vh; font-weight: 500; color: var(--ruby); word-break: break-all; }
